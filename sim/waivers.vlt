@@ -1,5 +1,5 @@
 `verilator_config
-lint_off -file "*/modules/cpu-tv80/*"
-lint_off -file "*/modules/sound-apu/*"
-lint_off -file "*/modules/cpu-t65/*"
-lint_off -file "*/rtl/sdram16.sv"
+lint_off -file "*modules/cpu-tv80/*"
+lint_off -file "*modules/sound-apu/*"
+lint_off -file "*modules/cpu-t65/*"
+lint_off -file "*rtl/sdram16.sv"
