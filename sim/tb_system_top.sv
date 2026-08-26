@@ -74,7 +74,8 @@ module tb_system_top (
     assign dbg_spr2_ctrl = u_core.spr2_ctrl;
     assign dbg_palbank   = u_core.palettebank;
     // Where in the raster does the game write the big-sprite control block?
-    assign dbg_ctrl_wr      = u_core.u_main.reg_hit;
+    // sprite-1 tilemap writes (e000-e7ff), the thing the laugh animation rewrites
+    assign dbg_ctrl_wr      = u_core.cpu_vwe && (u_core.cpu_vaddr[15:11] == 5'b11100);
     assign dbg_ctrl_wr_vcnt = u_core.u_video.vcnt;
 
     sdram_model u_model (

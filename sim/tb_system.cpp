@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
     static int wr_hist[64] = {0};                // raster row / 12
     while (next < want.size() && t++ < limit) {
         tick();
-        if (dut->dbg_ctrl_wr && !prev_wr) {
+        if (dut->dbg_ctrl_wr && !prev_wr && (!getenv("PO_HIST_FROM") || frame >= atoi(getenv("PO_HIST_FROM")))) {
             int v = dut->dbg_ctrl_wr_vcnt;
             if (v < wr_min) wr_min = v;
             if (v > wr_max) wr_max = v;
@@ -183,9 +183,11 @@ int main(int argc, char **argv) {
                 int f = want[next++];
                 char p[512];
                 snprintf(p, sizeof p, "%s/pix_top_%04d.bin", ref_dir, f);
-                auto rt = load_file(p);
+                auto rt = load_file(p, false);
+                if (rt.empty()) { snprintf(p, sizeof p, "%s/pix_top_%05d.bin", ref_dir, f); rt = load_file(p); }
                 snprintf(p, sizeof p, "%s/pix_bot_%04d.bin", ref_dir, f);
-                auto rb = load_file(p);
+                auto rb = load_file(p, false);
+                if (rb.empty()) { snprintf(p, sizeof p, "%s/pix_bot_%05d.bin", ref_dir, f); rb = load_file(p); }
                 auto mt = mame_rgb(rt), mb = mame_rgb(rb);
 
                 auto cmp = [&](const char *name, bool top,
@@ -252,8 +254,10 @@ int main(int argc, char **argv) {
                 long dprev = -1;
                 snprintf(p, sizeof p, "%s/pix_top_%04d.bin", ref_dir, f - 1);
                 auto rt1 = load_file(p, false);
+                if (rt1.empty()) { snprintf(p, sizeof p, "%s/pix_top_%05d.bin", ref_dir, f - 1); rt1 = load_file(p, false); }
                 snprintf(p, sizeof p, "%s/pix_bot_%04d.bin", ref_dir, f - 1);
                 auto rb1 = load_file(p, false);
+                if (rb1.empty()) { snprintf(p, sizeof p, "%s/pix_bot_%05d.bin", ref_dir, f - 1); rb1 = load_file(p, false); }
                 if (!rt1.empty() && !rb1.empty()) {
                     auto mt1 = mame_rgb(rt1), mb1 = mame_rgb(rb1);
                     dprev = cmp("top", true, mt1) + cmp("bot", false, mb1);

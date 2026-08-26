@@ -265,7 +265,7 @@ module punchout_core (
         .ovl_en(ovl_en), .ovl_stat(ovl_stat),
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
-        .vblank_rise(vblank_rise),
+        .vblank_rise(vblank_rise), .vblank_nmi(vblank_nmi),
         .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
         .dbg_f_overrun(f_overrun), .dbg_f_bg_short(f_bg_short),
         .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall));
@@ -292,10 +292,14 @@ module punchout_core (
     wire       soundlatch_wr, soundlatch2_wr, vlm_data_wr;
     wire       snd_reset, vlm_rst, vlm_st, vlm_vcu;
 
+    // Both NMIs fire once the video state has been snapshotted, ~21 us into
+    // vertical blanking, so the game's handler and the renderer never share a
+    // frame's data.
+    wire vblank_nmi;
     punchout_main u_main (
         .clk(clk), .reset(mach_reset), .pause(cpu_hold),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
-        .vblank_rise(vblank_rise),
+        .vblank_rise(vblank_nmi),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),
         .vlm_busy(1'b0),                    // no speech chip yet: never busy
         .cpu_vaddr(cpu_vaddr), .cpu_vdin(cpu_vdin), .cpu_vwe(cpu_vwe), .cpu_vq(cpu_vq),
@@ -313,7 +317,7 @@ module punchout_core (
     punchout_sound u_sound (
         .clk(clk), .reset(mach_reset), .snd_reset(snd_reset), .pause(cpu_hold),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
-        .vblank_rise(vblank_rise),
+        .vblank_rise(vblank_nmi),
         .soundlatch(soundlatch), .soundlatch2(soundlatch2),
         .sample(audio), .sample_ce(audio_ce),
         .dbg_dma_req(dbg_dma_req));

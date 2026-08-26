@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 ROM=${ROM:-punchout.rom}
 SYSREF=${SYSREF:-artifacts_sys}
 FRAMES=${FRAMES:-"60 150 300 600 900"}
-BUILD=build/sim_system
+BUILD=${BUILD:-build/sim_system}
 
 [ -f "$ROM" ] || { echo "no $ROM - build it with tools/mra_build.py"; exit 2; }
 [ -d "$SYSREF" ] || { echo "no $SYSREF - run tools/capture_attract.sh"; exit 2; }

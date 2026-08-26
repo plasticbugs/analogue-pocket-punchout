@@ -74,8 +74,11 @@ module punchout_video (
     output logic  [7:0] vid_g,
     output logic  [7:0] vid_b,
 
-    //! ---- one clk pulse at the start of vertical blanking; drives both NMIs
+    //! ---- one clk pulse at the start of vertical blanking (frame counting)
     output logic        vblank_rise,
+    //! ---- and one a little later, once the frame's video state has been
+    //!      snapshotted: THIS is what drives both CPUs' NMIs
+    output logic        vblank_nmi,
 
     //! ---- diagnostics
     output logic        dbg_line_overrun, // a line renderer ran past its row
@@ -156,6 +159,21 @@ module punchout_video (
     // selects do not infer byte enables in Quartus and explode into registers
     // (METHODOLOGY 5.5). Separate lanes also let the renderer read a whole tile
     // entry in a single cycle.
+    //
+    // Two copies of everything. The CPU reads and writes the LIVE copy. At the
+    // start of every vertical blank the live copy is snapshotted into the
+    // SHADOW copy -- 2048 clocks, all lanes in parallel -- and the renderer
+    // draws the next frame from the shadow alone. The NMI is not delivered to
+    // the CPUs until the snapshot is done, so the handler cannot race it.
+    //
+    // That is exactly MAME's model: it draws each frame from the state at the
+    // end of the previous one. It is also the only arrangement that cannot
+    // tear. The board reads its RAM as the beam scans, which is fine with a
+    // 2 ms vertical blank for the game to do its writing in; this raster has
+    // 1 ms of blanking and draws the two monitors one after the other, so a
+    // write that the board would hide lands in the middle of a displayed
+    // frame here. Reading live was tried; a black band flashed across the
+    // opponent whenever the game redrew his face while he gloated.
     // =========================================================================
     wire vsel_top = (cpu_vaddr[15:11] == 5'b11011); // d800-dfff
     wire vsel_spr = (cpu_vaddr[15:12] == 4'b1110);  // e000-efff
@@ -172,22 +190,61 @@ module punchout_video (
     logic  [7:0] s1_cq [0:3];
     logic  [7:0] s2_cq [0:3];
 
+    // ---- the snapshot copier: walks every entry during the first 2048
+    //      clocks of vertical blanking
+    logic [11:0] cp_addr;             // bit 11 = running
+    wire         cp_run  = cp_addr[11];
+    wire  [10:0] cp_a    = cp_addr[10:0];
+    logic [10:0] cp_wa;               // the address whose data is on the live ports now
+    logic        cp_we;
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            cp_addr <= '0; cp_we <= 1'b0; cp_wa <= '0; vblank_nmi <= 1'b0;
+        end else begin
+            vblank_nmi <= 1'b0;
+            cp_we <= cp_run;
+            cp_wa <= cp_a;
+            if (vblank_rise)              cp_addr <= 12'h800;
+            else if (cp_run) begin
+                if (cp_a == 11'h7ff) begin
+                    cp_addr    <= '0;
+                    vblank_nmi <= 1'b1;   // snapshot complete: now the game may run its handler
+                end else cp_addr <= cp_addr + 12'd1;
+            end
+        end
+    end
+
+    // live copies: port A the CPU, port B the copier
+    logic [7:0] bgt_l0, bgt_l1, bgb_l0, bgb_l1;
+    logic [7:0] s1_l [0:3];
+    logic [7:0] s2_l [0:3];
+
     po_dpram #(.AW(10), .DW(8)) u_bgt0 (.clk(clk),
         .a_addr(cpu_vaddr[10:1]), .a_we(cpu_vwe && vsel_top && !cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgt_q0),
-        .b_addr(bgt_ridx), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_code));
+        .b_addr(cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_l0));
     po_dpram #(.AW(10), .DW(8)) u_bgt1 (.clk(clk),
         .a_addr(cpu_vaddr[10:1]), .a_we(cpu_vwe && vsel_top &&  cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgt_q1),
-        .b_addr(bgt_ridx), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_attr));
+        .b_addr(cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_l1));
     po_dpram #(.AW(11), .DW(8)) u_bgb0 (.clk(clk),
         .a_addr(cpu_vaddr[11:1]), .a_we(cpu_vwe && vsel_bot && !cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgb_q0),
-        .b_addr(bgb_ridx), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_code));
+        .b_addr(cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l0));
     po_dpram #(.AW(11), .DW(8)) u_bgb1 (.clk(clk),
         .a_addr(cpu_vaddr[11:1]), .a_we(cpu_vwe && vsel_bot &&  cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgb_q1),
-        .b_addr(bgb_ridx), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_attr));
+        .b_addr(cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l1));
+
+    // shadow copies: written by the copier, read by the renderer
+    po_spram_dp #(.AW(10), .DW(8)) u_sbgt0 (.clk(clk),
+        .wa(cp_wa[9:0]), .we(cp_we && !cp_wa[10]), .d(bgt_l0), .ra(bgt_ridx), .q(bgt_code));
+    po_spram_dp #(.AW(10), .DW(8)) u_sbgt1 (.clk(clk),
+        .wa(cp_wa[9:0]), .we(cp_we && !cp_wa[10]), .d(bgt_l1), .ra(bgt_ridx), .q(bgt_attr));
+    po_spram_dp #(.AW(11), .DW(8)) u_sbgb0 (.clk(clk),
+        .wa(cp_wa), .we(cp_we), .d(bgb_l0), .ra(bgb_ridx), .q(bgb_code));
+    po_spram_dp #(.AW(11), .DW(8)) u_sbgb1 (.clk(clk),
+        .wa(cp_wa), .we(cp_we), .d(bgb_l1), .ra(bgb_ridx), .q(bgb_attr));
 
     generate
         genvar lane;
@@ -196,12 +253,18 @@ module punchout_video (
                 .a_addr(cpu_vaddr[10:2]),
                 .a_we(cpu_vwe && vsel_spr && !spr_hi && (cpu_vaddr[1:0] == lane[1:0])),
                 .a_d(cpu_vdin), .a_q(s1_cq[lane]),
-                .b_addr(s1_ridx), .b_we(1'b0), .b_d(8'h00), .b_q(s1_b[lane]));
+                .b_addr(cp_a[8:0]), .b_we(1'b0), .b_d(8'h00), .b_q(s1_l[lane]));
             po_dpram #(.AW(9), .DW(8)) u_s2 (.clk(clk),
                 .a_addr(cpu_vaddr[10:2]),
                 .a_we(cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == lane[1:0])),
                 .a_d(cpu_vdin), .a_q(s2_cq[lane]),
-                .b_addr(s2_ridx), .b_we(1'b0), .b_d(8'h00), .b_q(s2_b[lane]));
+                .b_addr(cp_a[8:0]), .b_we(1'b0), .b_d(8'h00), .b_q(s2_l[lane]));
+            po_spram_dp #(.AW(9), .DW(8)) u_ss1 (.clk(clk),
+                .wa(cp_wa[8:0]), .we(cp_we && (cp_wa[10:9] == 2'b00)), .d(s1_l[lane]),
+                .ra(s1_ridx), .q(s1_b[lane]));
+            po_spram_dp #(.AW(9), .DW(8)) u_ss2 (.clk(clk),
+                .wa(cp_wa[8:0]), .we(cp_we && (cp_wa[10:9] == 2'b00)), .d(s2_l[lane]),
+                .ra(s2_ridx), .q(s2_b[lane]));
         end
     endgenerate
 
@@ -284,24 +347,34 @@ module punchout_video (
         end
     endgenerate
 
+    // The small state goes with the snapshot too: sprite control block, scroll
+    // table, palette bank, all latched on the same clock the copy starts.
+    logic [63:0] spr1_snap;
+    logic [39:0] spr2_snap;
+    logic  [8:0] rowscroll [0:31];
+    logic  [7:0] palbank_l;
+    integer si;
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            spr1_snap <= '0; spr2_snap <= '0; palbank_l <= '0;
+            for (si = 0; si < 32; si++) rowscroll[si] <= 9'd58;
+        end else if (vblank_rise) begin
+            spr1_snap <= spr1_ctrl;
+            spr2_snap <= spr2_ctrl;
+            palbank_l <= palettebank;
+            for (si = 0; si < 32; si++) rowscroll[si] <= rs_shadow[si] + 9'd58;
+        end
+    end
+
     // =========================================================================
-    // Big sprite geometry, computed at the start of EVERY line from the live
-    // control registers -- the way the board reads them.
+    // Big sprite geometry, computed at the start of every line from the
+    // snapshotted control block.
     //
-    // It was once per frame, latched at a single instant in vertical blanking.
-    // Two instants were tried. At the start of vblank the latch preceded the
-    // NMI handler's writes and the sprite ran a frame behind MAME. Near the
-    // end of vblank it landed in the MIDDLE of those writes often enough to
-    // capture a torn block -- a new Y low byte with the old high bit, say --
-    // and the sprite spent one frame 256 lines away: on the Pocket, a black
-    // band the sprite's width, flashing, whenever the opponent came in close
-    // to gloat. The board never has that problem because it reads the
-    // registers as the beam scans; a torn value there costs one scanline.
-    //
-    // So this does the same. The arithmetic is ~10 clocks and the skip loop
-    // at most 255 per sprite, inside a 2240-clock row whose worst measured
-    // render is ~1520. The row-scroll table and the palette bank are read
-    // live for the same reason.
+    // Per line rather than per frame only because it is cheap -- ~10 clocks
+    // plus a skip loop of at most 255 per sprite, inside a 2240-clock row --
+    // and it keeps the geometry registers out of the frame-setup critical
+    // path. The values it reads are the snapshot's, so every line of a frame
+    // sees the same block.
     // =========================================================================
     logic [7:0]  c1 [0:7];
     logic [7:0]  c2 [0:4];
@@ -342,11 +415,11 @@ module punchout_video (
                 FS_IDLE: if (row_start) fst <= FS_LATCH;
 
                 FS_LATCH: begin
-                    for (li = 0; li < 8; li++) c1[li] <= spr1_ctrl[8*li +: 8];
-                    for (li = 0; li < 5; li++) c2[li] <= spr2_ctrl[8*li +: 8];
-                    spr1_top_en <= spr1_ctrl[56];       // dff7 bit 0
-                    spr1_bot_en <= spr1_ctrl[57];       // dff7 bit 1
-                    zoom        <= {spr1_ctrl[11:8], spr1_ctrl[7:0]};
+                    for (li = 0; li < 8; li++) c1[li] <= spr1_snap[8*li +: 8];
+                    for (li = 0; li < 5; li++) c2[li] <= spr2_snap[8*li +: 8];
+                    spr1_top_en <= spr1_snap[56];       // dff7 bit 0
+                    spr1_bot_en <= spr1_snap[57];       // dff7 bit 1
+                    zoom        <= {spr1_snap[11:8], spr1_snap[7:0]};
                     fst         <= FS_CALC1;
                 end
 
@@ -589,7 +662,7 @@ module punchout_video (
                     // registered rend_line it is just an add and the mux, and
                     // the line can spare the cycle.
                     R_BG_INIT: begin
-                        bg_tx <= rend_top ? 9'd0 : (rs_shadow[vy[7:3]] + 9'd58);
+                        bg_tx <= rend_top ? 9'd0 : rowscroll[vy[7:3]];
                         rs    <= R_BG_A;
                     end
                     // Address is already stable from the previous state, so
@@ -797,7 +870,7 @@ module punchout_video (
     end
 
     // The bank is palettebank bit 1 for the top monitor, bit 0 for the bottom.
-    assign pal_ra = {dl_top[0] ? palettebank[1] : palettebank[0], lb_rd};
+    assign pal_ra = {dl_top[0] ? palbank_l[1] : palbank_l[0], lb_rd};
 
     // component = 255 - pal4bit(v), and pal4bit(v) is {v,v}, so it is one NOT.
     // Index [0], not [1]. hcnt settles one tick before disp_x is evaluated
