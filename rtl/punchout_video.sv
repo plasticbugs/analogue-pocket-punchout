@@ -447,7 +447,7 @@ module punchout_video (
 
     typedef enum logic [4:0] {
         R_IDLE,
-        R_BG_A, R_BG_B, R_BG_C, R_BG_EMIT,
+        R_BG_INIT, R_BG_A, R_BG_B, R_BG_C, R_BG_EMIT,
         R_S1_START, R_S1_TILE, R_S1_TW, R_S1_R0, R_S1_R1, R_S1_EMIT,
         R_S2_START, R_S2_TILE, R_S2_TW, R_S2_R, R_S2_EMIT,
         R_DONE
@@ -498,9 +498,17 @@ module punchout_video (
     // than accumulated. draw_roz_core steps starty once per screen line, so
     // line L wants starty_init + L*incyy -- and a bottom line is rendered once
     // for each of its two output rows, which an accumulator would step twice.
+    // Registered, not wired straight into the sprite state machine. rend_line
+    // is stable for the whole row, so these settle one clock after row_start
+    // and are read hundreds of clocks later -- but left combinational the
+    // 32-bit multiply landed in the path that decides the next state, and it
+    // was the other path still missing 96 MHz.
     wire signed [31:0] line_s = $signed({24'b0, rend_line});
-    wire        [31:0] s1y    = starty1_init + 32'(incyy1 * line_s);
-    wire        [31:0] s2y    = starty2_init + 32'(line_s <<< 16);
+    logic       [31:0] s1y, s2y;
+    always_ff @(posedge clk) begin
+        s1y <= starty1_init + 32'(incyy1 * line_s);
+        s2y <= starty2_init + 32'(line_s <<< 16);
+    end
 
     logic [11:0] line_cycles;
 
@@ -534,13 +542,23 @@ module punchout_video (
                 rend_line <= next_line;
                 bg_col    <= '0;
                 bg_x      <= '0;
-                bg_tx     <= next_top ? 9'd0 : rowscroll[next_vy[7:3]];
-                rs        <= R_BG_A;
+                rs        <= R_BG_INIT;
             end else begin
                 case (rs)
                     R_IDLE: ;
 
                     // ---------------- background ----------------
+                    // The row-scroll lookup happens HERE rather than at
+                    // row_start. There it was a 32-entry mux hanging off the
+                    // raster counter -- vcnt through act_y, next_row, next_line
+                    // and a shift before it even reached the mux -- and it was
+                    // one of the two paths still missing 96 MHz. From a
+                    // registered rend_line it is just an add and the mux, and
+                    // the line can spare the cycle.
+                    R_BG_INIT: begin
+                        bg_tx <= rend_top ? 9'd0 : rowscroll[vy[7:3]];
+                        rs    <= R_BG_A;
+                    end
                     // Address is already stable from the previous state, so
                     // A settles the tilemap read, B settles the gfx read.
                     R_BG_A: rs <= R_BG_B;

@@ -224,17 +224,22 @@ module punchout_sound (
     // which also tracks any drift in the idle level rather than assuming one.
     // Working in 8 extra fractional bits keeps the pole from quantising away.
     // -------------------------------------------------------------------------
+    // Split across two chip cycles rather than three chained 26-bit adds in
+    // one: the difference and the recursion are separate stages, which keeps
+    // the carry chain half as long. Mathematically this is the same filter with
+    // one extra sample of delay, which at 1.79 MHz is nothing.
     logic signed [25:0] dcb_y;
+    logic signed [17:0] dcb_d;
     logic        [15:0] dcb_x1;
     always_ff @(posedge clk) begin
         if (reset) begin
             dcb_y  <= '0;
+            dcb_d  <= '0;
             dcb_x1 <= '0;
         end else if (ce_2a03) begin
-            dcb_y  <= (26'($signed({10'b0, apu_sample}) <<< 8))
-                    - (26'($signed({10'b0, dcb_x1})    <<< 8))
-                    + dcb_y - (dcb_y >>> 8);
+            dcb_d  <= $signed({2'b0, apu_sample}) - $signed({2'b0, dcb_x1});
             dcb_x1 <= apu_sample;
+            dcb_y  <= (26'(dcb_d) <<< 8) + dcb_y - (dcb_y >>> 8);
         end
     end
 

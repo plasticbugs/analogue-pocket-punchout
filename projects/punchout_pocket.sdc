@@ -87,6 +87,31 @@ set_multicycle_path -setup 8 -from [get_registers {*|T65:*|*}] -to [get_register
 set_multicycle_path -hold  7 -from [get_registers {*|T65:*|*}] -to [get_registers {*|T65:*|*}]
 
 # ==============================================================================
+# The APU's mixer.
+#
+# NES_MiSTer clocks the APU at 21.477 MHz, where its mixer -- channel registers
+# through two lookup tables and three adds to the Sample output -- has 46 ns and
+# is comfortable. Here it runs on the 96 MHz system clock with an enable, and
+# measured on this fit that chain is 18 ns: it cannot close in 10.4 ns, and
+# every one of the 400 worst paths in the design was this same one.
+#
+# The only thing that samples it is the DC blocker in punchout_sound, which
+# updates once per 2A03 cycle -- about 54 system clocks. And every register
+# inside the APU is enable-gated at an APU rate (aclk1, aclk1_d, phi1, env_clk,
+# noise_clock, aclk2, write); the sole exception is phi2_old, whose source is
+# PHI2 in punchout_sound rather than an APU register, so it is not covered here.
+#
+# 4 rather than 54: a fraction of the provable margin, ample relief, and it
+# stays correct even if the enable generation is ever changed.
+# ==============================================================================
+set_multicycle_path -setup 4 -from [get_registers {*|APU:*|*}] -to [get_registers {*|punchout_sound:*|dcb_*}]
+set_multicycle_path -hold  3 -from [get_registers {*|APU:*|*}] -to [get_registers {*|punchout_sound:*|dcb_*}]
+set_multicycle_path -setup 4 -from [get_registers {*|punchout_sound:*|dcb_*}] -to [get_registers {*|punchout_sound:*|dcb_*}]
+set_multicycle_path -hold  3 -from [get_registers {*|punchout_sound:*|dcb_*}] -to [get_registers {*|punchout_sound:*|dcb_*}]
+set_multicycle_path -setup 4 -from [get_registers {*|punchout_sound:*|dcb_*}] -to [get_registers {*|punchout_sound:*|sample[*]}]
+set_multicycle_path -hold  3 -from [get_registers {*|punchout_sound:*|dcb_*}] -to [get_registers {*|punchout_sound:*|sample[*]}]
+
+# ==============================================================================
 # Big-sprite geometry.
 #
 # The frame-setup machine multiplies the 12-bit zoom by three constants and adds

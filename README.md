@@ -54,6 +54,9 @@ face buttons and the shoulders so either hand position works.
 
 ## What is and is not implemented
 
+Synthesis closes on the real part: 25% of the logic, 28% of the block RAM, and
+**+0.844 ns** of setup slack at 96 MHz with nothing negative in any corner.
+
 Working and verified:
 
 * Both monitors, pixel-identical to MAME across sixteen frozen machine states —
@@ -73,6 +76,9 @@ Not yet:
   to the SD card.
 * **Audio verified against MAME.** The sound path is built and the clock rates
   are exact, but it has not been measured against a MAME recording yet.
+* **Platform artwork.** No banner image ships, so the Pocket shows its default
+  one. Cosmetic.
+* **Hardware.** Nothing here has run on a Pocket yet.
 
 ## Building
 

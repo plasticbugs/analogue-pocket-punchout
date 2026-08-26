@@ -244,7 +244,7 @@ approximation at the cost of a frame of latency in a reaction game.
 `sim/run_system.sh` therefore compares each captured frame against MAME's frame
 *N* and frame *N-1* and passes if either is identical, and says which.
 
-## Synthesis — CLEAN
+## Synthesis and timing — CLOSED
 
 `./build-local.sh map` (Quartus 18.1 in Docker) runs analysis and synthesis in
 about a minute and is the check to run before every push; a broken push costs a
@@ -253,8 +253,14 @@ whole CI cycle.
 | | |
 |---|---|
 | Errors | 0 |
-| Registers | 5,546 |
-| Block memory bits | 879,841 of 3,080,000 (29%) |
+| Logic (ALMs) | 4,637 of 18,480 (25%) |
+| Registers | 5,927 |
+| Block memory bits | 879,841 of 3,153,920 (28%) |
+| RAM blocks | 121 of 308 (39%) |
+| DSP blocks | 13 of 66 (20%) |
+| Worst setup slack, 96 MHz | **+0.844 ns** |
+| Worst hold slack | +0.287 ns |
+| Negative slack, any corner | none |
 
 ### Two things it caught that simulation could not
 
@@ -280,6 +286,50 @@ the line buffers should always have been.
 
 Both regressions were re-run afterwards and still pass: sixteen frozen states at
 zero differing pixels, and attract mode identical to MAME frame for frame.
+
+### Closing timing: -6.107 ns to +0.844 ns
+
+The first fit missed by 6.1 ns with -273 ns of total negative slack. Rather than
+guess, `projects/report_worst.tcl` was pointed at the timing database, and all
+400 worst paths turned out to be one path group: the APU's noise channel through
+its mixer into the DC blocker, 25.7 ns end to end.
+
+The delay split at about 18 ns inside the APU's own mixer and 7.7 ns in the DC
+blocker's carry chain, which decided the two fixes:
+
+* **The DC blocker** was three chained 26-bit adds in one cycle. Split into two
+  stages -- the difference, then the recursion -- which is the same filter with
+  one extra sample of delay, and at 1.79 MHz that is nothing.
+* **The APU's mixer** is 18 ns because NES_MiSTer clocks it at 21.477 MHz, where
+  it has 46 ns. It cannot be made to close at 96 MHz, and it does not need to:
+  the only thing that samples it updates once per 2A03 cycle, about 54 system
+  clocks. Every register inside the APU was checked to be enable-gated at an APU
+  rate before the multicycle went in -- the one exception, `phi2_old`, is driven
+  from outside the APU and so is not covered by it.
+
+That left two paths of this core's own making, each missing by half a
+nanosecond, and each a long combinational chain feeding a register in the same
+cycle it was computed:
+
+* the row-scroll lookup, a 32-entry mux hanging off the raster counter through
+  `act_y`, `next_row`, `next_line` and a shift — moved into a renderer state of
+  its own, where it starts from a registered line number instead;
+* the sprite Y, a 32-bit multiply wired straight into the condition that picks
+  the next renderer state — now registered, which costs nothing because
+  `rend_line` is stable for the whole row and the value is read hundreds of
+  clocks later.
+
+### The constraints file was being read too early
+
+Every `get_clocks` in `punchout_pocket.sdc` matched nothing, and the entire
+`set_clock_groups` was silently ignored: Quartus reads SDC files in the order
+they are listed, and the Pocket BSP's `sys_constr.sdc` is what creates
+`clk_74a`, `clk_74b` and the PLL outputs. It is now listed after the BSP's.
+
+This matters beyond tidiness. The BSP puts each PLL output in its own
+asynchronous group, which **cuts** the clk_sys to clk_vid crossing rather than
+analysing it — and that crossing is the video output. Cutting it would let each
+build route it blind and make the picture depend on the fitter seed.
 
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report

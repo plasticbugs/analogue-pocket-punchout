@@ -74,6 +74,12 @@ jobs:
             echo
             echo "TIMING NOT CLOSED -- refusing to call this build good."
             grep -B3 'Slack : -' "$sta" | head -30
+            echo
+            echo "--- worst paths ---"
+            docker run --rm -v "$PWD":/build -w /build raetro/quartus:pocket \
+              quartus_sta -t projects/report_worst.tcl >/dev/null 2>&1 || true
+            grep -E '^; (From|To) Node|^; Slack ' \
+              projects/output_files/worst_paths.txt 2>/dev/null | head -30 || true
             exit 1
           fi
           echo "all corners positive"
@@ -111,4 +117,5 @@ jobs:
           path: |
             projects/output_files/*.rpt
             projects/output_files/*.summary
+            projects/output_files/worst_paths.txt
           if-no-files-found: ignore

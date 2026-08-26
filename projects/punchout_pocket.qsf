@@ -60,8 +60,13 @@ set_global_assignment -name SOURCE_TCL_SCRIPT_FILE ../platform/pocket/bsp/pocket
 # Platform Modules, Constrains and Chain Description File
 # ==============================================================================
 set_global_assignment -name QIP_FILE punchout_pocket.qip
-set_global_assignment -name SDC_FILE punchout_pocket.sdc
 set_global_assignment -name CDF_FILE punchout_pocket.cdf
+# NOTE: punchout_pocket.sdc is deliberately NOT listed here. Quartus reads SDC
+# files in the order they appear, and the Pocket BSP's sys_constr.sdc is what
+# creates clk_74a, clk_74b and the PLL output clocks. Listed here, this core's
+# constraints are read first and every get_clocks in them matches nothing --
+# which is exactly what happened: the whole set_clock_groups was silently
+# ignored. It is listed after the BSP's instead, further down this file.
 
 # ==============================================================================
 # Core RTL Assignments
@@ -88,7 +93,7 @@ set_global_assignment -name POST_FLOW_SCRIPT_FILE "quartus_sh:../platform/pocket
 set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
 set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
 set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON
-set_global_assignment -name TIMING_ANALYZER_REPORT_WORST_CASE_TIMING_PATHS OFF
+set_global_assignment -name TIMING_ANALYZER_REPORT_WORST_CASE_TIMING_PATHS ON
 set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -fall
 set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -rise
 set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -fall
@@ -341,6 +346,7 @@ set_global_assignment -name SOURCE_FILE ../platform/pocket/bsp/pocket/sys_assign
 set_global_assignment -name SOURCE_FILE ../platform/pocket/bsp/setup.tcl
 set_global_assignment -name SYSTEMVERILOG_FILE ../platform/pocket/bsp/pocket/apf_top.sv
 set_global_assignment -name SDC_FILE ../platform/pocket/bsp/pocket/sys_constr.sdc
+set_global_assignment -name SDC_FILE punchout_pocket.sdc
 set_global_assignment -name SOURCE_FILE ../platform/pocket/pkgIndex.tcl
 set_global_assignment -name SYSTEMVERILOG_FILE ../platform/pocket/audio/pocket_i2s.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../platform/pocket/audio/audio_mixer.sv
