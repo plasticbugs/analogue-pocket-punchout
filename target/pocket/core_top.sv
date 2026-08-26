@@ -863,7 +863,11 @@ module core_top
     //! This line is outside every simulation bench, which stop at
     //! punchout_core, so it is kept to the two things that genuinely mean
     //! "reset": the menu action and the PLL not yet locked.
-    wire po_reset = reset_sw_s | ~pll_core_locked_s;
+    //! reset_sw folds in the APF host's reset_n as well as the menu action, and
+    //! the host holds reset_n low for the entire data-slot download -- so this
+    //! must stop only the machine. The load path answers to the PLL alone.
+    wire po_reset    = reset_sw_s;
+    wire po_hw_reset = ~pll_core_locked_s;
 
     //! ROM: a single slot holding the flat 371,712-byte image built by
     //! tools/mra_build.py. punchout_core decodes the regions itself and sends
@@ -922,6 +926,7 @@ module core_top
     punchout_core po (
         .clk              ( clk_sys      ),
         .clk_sdram        ( clk_sdram    ),
+        .hw_reset         ( po_hw_reset  ),
         .reset            ( po_reset     ),
         .rd_late          ( po_rd_late   ),
         .ovl_en           ( po_ovl_en    ),

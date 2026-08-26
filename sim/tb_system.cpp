@@ -67,11 +67,16 @@ int main(int argc, char **argv) {
     for (int f : want) if (f > last_frame) last_frame = f;
 
     dut = new Vtb_system_top;
+    // The Pocket holds the core's reset asserted for the entire download and
+    // releases it afterwards; the first two hardware builds lost the whole ROM
+    // to a load path that honoured that reset. So this bench does the same:
+    // hw_reset (PLL lock) drops before loading, reset stays up until after.
+    dut->hw_reset = 1;
     dut->reset = 1; dut->dl_active = 1; dut->dl_we = 0;
     dut->in0 = 0; dut->in1 = 0;
     dut->dsw1 = 0x00; dut->dsw2 = 0x10;      // factory defaults
     for (int i = 0; i < 64; i++) tick();
-    dut->reset = 0;
+    dut->hw_reset = 0;                        // PLL locked; reset stays asserted
 
     long guard = 0;
     while (guard++ < 400000) tick();          // SDRAM power-up sequence
@@ -90,6 +95,7 @@ int main(int argc, char **argv) {
     }
     dut->dl_active = 0;
     for (int i = 0; i < 4096; i++) tick();    // let the FIFO drain
+    dut->reset = 0;                           // the host releases the core
     {
         // The loader goes through a write FIFO here, which the frozen-state
         // bench does not exercise. Check what actually landed.

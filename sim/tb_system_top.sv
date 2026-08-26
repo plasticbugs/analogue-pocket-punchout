@@ -15,6 +15,7 @@
 module tb_system_top (
     input  wire         clk,
     input  wire         reset,
+    input  wire         hw_reset,
 
     input  wire         dl_active,
     input  wire  [24:0] dl_addr,
@@ -54,7 +55,7 @@ module tb_system_top (
     wire        sdqml, sdqmh, scs_n, sras_n, scas_n, swe_n, scke, sclk;
 
     punchout_core u_core (
-        .clk(clk), .clk_sdram(clk), .reset(reset), .rd_late(1'b1), .ovl_en(1'b0),
+        .clk(clk), .clk_sdram(clk), .hw_reset(hw_reset), .reset(reset), .rd_late(1'b1), .ovl_en(1'b0),
         .dl_active(dl_active), .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),

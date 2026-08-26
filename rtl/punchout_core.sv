@@ -14,6 +14,16 @@
 module punchout_core (
     input  wire         clk,             // 96 MHz
     input  wire         clk_sdram,       // 96 MHz, phase-shifted: the chip's clock
+    //! Two resets, and the distinction is the whole reason the first two
+    //! hardware builds had no sprites:
+    //!   hw_reset  -- the PLL is not locked. Resets everything, including the
+    //!                SDRAM controller and the loader's queue.
+    //!   reset     -- the APF host or the Pocket menu asked for a core reset.
+    //!                Stops the machine and nothing else. The host holds this
+    //!                asserted for the WHOLE data-slot download and releases it
+    //!                afterwards, so anything on the load path that honours it
+    //!                simply never sees the ROM.
+    input  wire         hw_reset,
     input  wire         reset,
     input  wire         rd_late,         // SDRAM read capture point; 1 is correct
     input  wire         ovl_en,          // show the diagnostic overlay
@@ -130,7 +140,7 @@ module punchout_core (
     end
 
     always_ff @(posedge clk) begin
-        if (reset) begin
+        if (hw_reset) begin
             wf_wp             <= '0;
             wf_rp             <= '0;
             wr_busy           <= 1'b0;
@@ -175,7 +185,7 @@ module punchout_core (
     wire tst_go = (held_d && !held) || (rd_late != rd_late_d);
 
     po_sdram_test u_test (
-        .clk(clk), .reset(reset), .go(tst_go), .ref_sum(ld_sum),
+        .clk(clk), .reset(hw_reset), .go(tst_go), .ref_sum(ld_sum),
         .busy(tst_busy), .rom_st(dbg_rom_st), .pat_st(dbg_pat_st),
         .sd_addr(tst_addr), .sd_din(tst_din), .sd_we(tst_we), .sd_rd(tst_rd),
         .sd_dout16(sd_dout16), .sd_ready(sd_ready));
@@ -193,7 +203,7 @@ module punchout_core (
     wire        sd_rd_mux   = loading_r ? 1'b0     : tst_busy ? tst_rd : vid_sd_rd;
 
     sdram16 u_sdram (
-        .init(reset), .clk(clk), .clk_pin(clk_sdram), .rd_late(rd_late),
+        .init(hw_reset), .clk(clk), .clk_pin(clk_sdram), .rd_late(rd_late),
         .SDRAM_DQ(dram_dq), .SDRAM_A(dram_a), .SDRAM_DQML(dram_dqm_l),
         .SDRAM_DQMH(dram_dqm_h), .SDRAM_BA(dram_ba), .SDRAM_nCS(dram_cs_n),
         .SDRAM_nWE(dram_we_n), .SDRAM_nRAS(dram_ras_n), .SDRAM_nCAS(dram_cas_n),
