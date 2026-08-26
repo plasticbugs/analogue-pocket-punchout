@@ -1,0 +1,240 @@
+// Full-system bench: boot the machine and hold it to MAME frame for frame.
+//
+// Loads the ROM, releases reset, runs attract mode with no input at all, and at
+// each requested frame pulls the two monitors back out of the composite and
+// diffs them against MAME's own bitmaps for the same frame. Attract mode is
+// deterministic from reset in both, so "the same frame" is a fair comparison.
+//
+//   tb_system <punchout.rom> <ref_dir> <frame> [frame ...]
+
+#include "Vtb_system_top.h"
+#include "Vtb_system_top___024root.h"
+#include "verilated.h"
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+static Vtb_system_top *dut;
+static vluint64_t main_time = 0;
+double sc_time_stamp() { return main_time; }
+
+static void tick() {
+    dut->clk = 0; dut->eval();
+    dut->clk = 1; dut->eval();
+    main_time++;
+}
+
+static const int CW = 512, CH = 672, SW = 256, SH = 224, TOP_XOFF = 128, TOP_ROWS = 224;
+
+static std::vector<unsigned char> load_file(const char *path, bool required = true) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        if (required) { fprintf(stderr, "cannot open %s\n", path); exit(1); }
+        return {};
+    }
+    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+    std::vector<unsigned char> d(n);
+    if (fread(d.data(), 1, n, f) != (size_t)n) { fprintf(stderr, "short read %s\n", path); exit(1); }
+    fclose(f);
+    return d;
+}
+
+// screen:pixels() writes rgb_t as a little-endian u32, so the file runs B G R A.
+static std::vector<unsigned char> mame_rgb(const std::vector<unsigned char> &d) {
+    std::vector<unsigned char> out(SW * SH * 3);
+    for (int i = 0; i < SW * SH; i++) {
+        out[i * 3 + 0] = d[i * 4 + 2];
+        out[i * 3 + 1] = d[i * 4 + 1];
+        out[i * 3 + 2] = d[i * 4 + 0];
+    }
+    return out;
+}
+
+int main(int argc, char **argv) {
+    Verilated::commandArgs(argc, argv);
+    if (argc < 4) {
+        fprintf(stderr, "usage: tb_system <rom> <ref_dir> <frame> [frame ...]\n");
+        return 2;
+    }
+    const char *rom_path = argv[1];
+    const char *ref_dir  = argv[2];
+
+    std::vector<int> want;
+    for (int i = 3; i < argc; i++) want.push_back(atoi(argv[i]));
+    int last_frame = 0;
+    for (int f : want) if (f > last_frame) last_frame = f;
+
+    dut = new Vtb_system_top;
+    dut->reset = 1; dut->dl_active = 1; dut->dl_we = 0;
+    dut->in0 = 0; dut->in1 = 0;
+    dut->dsw1 = 0x00; dut->dsw2 = 0x10;      // factory defaults
+    for (int i = 0; i < 64; i++) tick();
+    dut->reset = 0;
+
+    long guard = 0;
+    while (guard++ < 400000) tick();          // SDRAM power-up sequence
+
+    auto rom = load_file(rom_path);
+    for (size_t a = 0; a < rom.size(); a++) {
+        dut->dl_addr = (unsigned)a;
+        dut->dl_data = rom[a];
+        dut->dl_we   = 1;
+        tick();
+        dut->dl_we = 0;
+        // The APF bridge cannot deliver faster than this; a byte every sixteen
+        // clocks is already generous next to an SPI link, and it leaves the
+        // SDRAM's ~12-clock write comfortably ahead of the queue.
+        for (int i = 0; i < 15; i++) tick();
+    }
+    dut->dl_active = 0;
+    for (int i = 0; i < 4096; i++) tick();    // let the FIFO drain
+    {
+        // The loader goes through a write FIFO here, which the frozen-state
+        // bench does not exercise. Check what actually landed.
+        auto &r = *dut->rootp;
+        auto rd = [&](unsigned byte_addr) -> unsigned char {
+            unsigned w = r.tb_system_top__DOT__u_model__DOT__mem[byte_addr >> 1];
+            return (byte_addr & 1) ? ((w >> 8) & 0xff) : (w & 0xff);
+        };
+        long bad = 0; unsigned firstbad = 0;
+        for (unsigned t = 0; t < 0x10000 && bad < 4; t++)
+            for (int p2 = 0; p2 < 3; p2++)
+                if (rom[0x16000 + p2 * 0x10000 + t] != rd(t * 4 + p2)) {
+                    if (!bad) firstbad = t * 4 + p2;
+                    bad++;
+                }
+        for (unsigned t = 0; t < 0x8000 && bad < 8; t++)
+            for (int p2 = 0; p2 < 2; p2++)
+                if (rom[0x46000 + p2 * 0x8000 + t] != rd(0x40000 + t * 2 + p2)) {
+                    if (!bad) firstbad = 0x40000 + t * 2 + p2;
+                    bad++;
+                }
+        if (dut->dbg_load_overflow) {
+            fprintf(stderr, "the loader's write queue overflowed\n");
+            return 1;
+        }
+        if (bad) {
+            fprintf(stderr, "SDRAM wrong after loading through the FIFO "
+                            "(first bad byte at %06x)\n", firstbad);
+            return 1;
+        }
+    }
+    printf("loaded %zu bytes, SDRAM verified; releasing the machine\n", rom.size());
+
+    // ---- run, capturing the requested frames
+    int frame = 0;
+    size_t next = 0;
+    int failures = 0;
+    std::vector<unsigned char> img;
+    bool capturing = false;
+    int prev_ce = 0;
+
+    // 96 MHz, ~60 frames a second: a frame is about 1.6 M ticks.
+    const long long limit = 2500000LL * (last_frame + 8);
+    long long t = 0;
+    while (next < want.size() && t++ < limit) {
+        tick();
+        if (dut->vblank_rise) {
+            frame++;
+            if (next < want.size() && frame == want[next]) {
+                capturing = true;
+                img.clear();
+                img.reserve(CW * CH * 3);
+            }
+        }
+        int ce = dut->ce_pix;
+        if (capturing && prev_ce && !ce && dut->de) {
+            img.push_back(dut->vid_r);
+            img.push_back(dut->vid_g);
+            img.push_back(dut->vid_b);
+            if ((int)img.size() == CW * CH * 3) {
+                capturing = false;
+                int f = want[next++];
+                char p[512];
+                snprintf(p, sizeof p, "%s/pix_top_%04d.bin", ref_dir, f);
+                auto rt = load_file(p);
+                snprintf(p, sizeof p, "%s/pix_bot_%04d.bin", ref_dir, f);
+                auto rb = load_file(p);
+                auto mt = mame_rgb(rt), mb = mame_rgb(rb);
+
+                auto cmp = [&](const char *name, bool top) {
+                    long diff = 0;
+                    const std::vector<unsigned char> &ref = top ? mt : mb;
+                    for (int y = 0; y < SH; y++)
+                        for (int x = 0; x < SW; x++) {
+                            int o = top ? ((y * CW + TOP_XOFF + x) * 3)
+                                        : (((TOP_ROWS + 2 * y) * CW + 2 * x) * 3);
+                            int r = (y * SW + x) * 3;
+                            if (img[o] != ref[r] || img[o + 1] != ref[r + 1] ||
+                                img[o + 2] != ref[r + 2]) diff++;
+                        }
+                    printf("  %-6s %6ld differing pixels (%.2f%%)\n",
+                           name, diff, 100.0 * diff / (SW * SH));
+                    return diff;
+                };
+                printf("frame %d:\n", f);
+                if (getenv("PO_VRAM")) {
+                    // Compare the machine's own video RAM against the state MAME
+                    // dumped for this frame: a renderer fault and a CPU fault
+                    // look the same on screen.
+                    char sp[512];
+                    snprintf(sp, sizeof sp, "%s/state_%04d.txt", ref_dir, f);
+                    FILE *sf = fopen(sp, "r");
+                    if (sf) {
+                        char line[512]; std::string cur; std::vector<unsigned char> e000;
+                        while (fgets(line, sizeof line, sf)) {
+                            std::string L(line);
+                            while (!L.empty() && (L.back()=='\n'||L.back()=='\r')) L.pop_back();
+                            if (L.rfind("VRAM_",0)==0) { cur=L; continue; }
+                            if (cur!="VRAM_E000" || L=="END" || L.empty()) continue;
+                            for (size_t i=0;i+1<L.size();i+=2)
+                                e000.push_back((unsigned char)strtol(L.substr(i,2).c_str(),nullptr,16));
+                        }
+                        fclose(sf);
+                        auto &r = *dut->rootp;
+                        long bad = 0; int firstbad = -1;
+                        for (int t = 0; t < 512 && (int)e000.size() >= 2048; t++)
+                            for (int lane = 0; lane < 4; lane++) {
+                                unsigned got =
+                                  lane==0 ? r.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__0__KET____DOT__u_s1__DOT__mem[t] :
+                                  lane==1 ? r.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__1__KET____DOT__u_s1__DOT__mem[t] :
+                                  lane==2 ? r.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__2__KET____DOT__u_s1__DOT__mem[t] :
+                                            r.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__3__KET____DOT__u_s1__DOT__mem[t];
+                                unsigned want = e000[t*4+lane];
+                                if (got != want) { if (firstbad<0) firstbad = t*4+lane; bad++; }
+                            }
+                        printf("  spr1 video RAM: %ld of 2048 bytes differ from MAME%s\n",
+                               bad, bad ? "" : " (identical)");
+                        if (bad) printf("    first at e%03x\n", 0x000 + firstbad);
+                    }
+                }
+                printf("  spr1 ctrl %016llx  spr2 ctrl %010llx  palbank %02x\n",
+                       (unsigned long long)dut->dbg_spr1_ctrl,
+                       (unsigned long long)dut->dbg_spr2_ctrl, dut->dbg_palbank);
+                long d = cmp("top", true) + cmp("bot", false);
+                if (getenv("PO_DUMP")) {
+                    snprintf(p, sizeof p, "build/sys_%04d.ppm", f);
+                    FILE *o = fopen(p, "wb");
+                    fprintf(o, "P6\n%d %d\n255\n", CW, CH);
+                    fwrite(img.data(), 1, img.size(), o);
+                    fclose(o);
+                    printf("  wrote %s\n", p);
+                }
+                if (d) failures++;
+                if (dut->dbg_line_overrun)
+                    printf("  WARNING: a line renderer ran past its output row\n");
+                if (dut->dbg_dma_req)
+                    printf("  WARNING: the DMC asked for a DMA, which this core does "
+                           "not service\n");
+            }
+        }
+        prev_ce = ce;
+    }
+    if (next < want.size()) {
+        fprintf(stderr, "ran out of time after %d frames\n", frame);
+        return 1;
+    }
+    return failures ? 1 : 0;
+}

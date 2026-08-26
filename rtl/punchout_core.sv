@@ -40,6 +40,9 @@ module punchout_core (
     output wire signed [15:0] audio,
     output wire         audio_ce,
 
+    //! ---- one pulse per frame at the start of vblank
+    output wire         vblank_rise,
+
     //! ---- NVRAM, so the Pocket can save the high scores and records
     input  wire  [24:0] nv_addr,
     output wire   [7:0] nv_q,
@@ -62,15 +65,27 @@ module punchout_core (
     //! ---- diagnostics for the on-screen overlay
     output wire         dbg_line_overrun,
     output wire  [11:0] dbg_worst_line,
-    output wire         dbg_dma_req
+    output wire         dbg_dma_req,
+    output logic        dbg_load_overflow
 );
     // =========================================================================
     // ROM download
     //
-    // The APF loader hands over bytes at its own pace with no back-pressure,
-    // while the SDRAM's service time varies with refresh. Passing them straight
-    // through would let a pending write be overwritten in flight and silently
-    // lost, so they are buffered and issued at the controller's pace.
+    // The APF loader hands over bytes at its own pace with no back-pressure at
+    // all, while the SDRAM's service time varies with refresh. Passing them
+    // straight through would let a pending write be overwritten in flight and
+    // silently lost, so they are buffered and issued at the controller's pace.
+    //
+    // A write costs about a dozen clocks, so the queue has to cover any burst
+    // that arrives faster than that. 256 entries is far more than the bridge
+    // can deliver between two writes; the sustained rate is not in question,
+    // since 272 KB at a dozen clocks each is 34 ms and the bridge takes far
+    // longer than that to send the image.
+    //
+    // If it ever does fill, bytes would be dropped and the graphics would be
+    // quietly wrong -- which is exactly what the full-system bench found when
+    // the queue was 64 deep and the bench fed it at one byte per four clocks.
+    // So overflow is latched and reported rather than ignored.
     // =========================================================================
     wire [24:0] ld_addr;
     wire  [7:0] ld_data;
@@ -78,9 +93,10 @@ module punchout_core (
     po_romload u_load (.dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
                        .sd_addr(ld_addr), .sd_data(ld_data), .sd_we(ld_we));
 
-    logic [32:0] wfifo [0:63];
-    logic  [6:0] wf_wp, wf_rp;
+    logic [32:0] wfifo [0:255];
+    logic  [8:0] wf_wp, wf_rp;
     wire         wf_empty = (wf_wp == wf_rp);
+    wire         wf_full  = (wf_wp[7:0] == wf_rp[7:0]) && (wf_wp[8] != wf_rp[8]);
     logic        wr_busy;
 
     logic [24:0] sd_addr;
@@ -94,25 +110,27 @@ module punchout_core (
 
     always_ff @(posedge clk) begin
         if (reset) begin
-            wf_wp   <= '0;
-            wf_rp   <= '0;
-            wr_busy <= 1'b0;
-            sd_we   <= 1'b0;
+            wf_wp             <= '0;
+            wf_rp             <= '0;
+            wr_busy           <= 1'b0;
+            sd_we             <= 1'b0;
+            dbg_load_overflow <= 1'b0;
         end else begin
             sd_we <= 1'b0;
             if (ld_we) begin
-                wfifo[wf_wp[5:0]] <= {ld_addr, ld_data};
-                wf_wp <= wf_wp + 7'd1;
+                if (wf_full) dbg_load_overflow <= 1'b1;
+                wfifo[wf_wp[7:0]] <= {ld_addr, ld_data};
+                wf_wp <= wf_wp + 9'd1;
             end
             if (!wr_busy) begin
                 if (!wf_empty && sd_ready) begin
-                    sd_addr <= wfifo[wf_rp[5:0]][32:8];
-                    sd_din  <= wfifo[wf_rp[5:0]][7:0];
+                    sd_addr <= wfifo[wf_rp[7:0]][32:8];
+                    sd_din  <= wfifo[wf_rp[7:0]][7:0];
                     sd_we   <= 1'b1;
                     wr_busy <= 1'b1;
                 end
             end else if (!sd_ready) begin
-                wf_rp   <= wf_rp + 7'd1;
+                wf_rp   <= wf_rp + 9'd1;
                 wr_busy <= 1'b0;
             end
         end
@@ -150,7 +168,6 @@ module punchout_core (
     wire [63:0] spr1_ctrl;
     wire [39:0] spr2_ctrl;
     wire  [7:0] palettebank;
-    wire        vblank_rise;
 
     punchout_video u_video (
         .clk(clk), .reset(mach_reset),

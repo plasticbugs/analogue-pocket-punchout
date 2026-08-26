@@ -129,6 +129,18 @@ module punchout_video (
     wire        raw_vs = (vcnt < 10'd4);
     wire        raw_de = h_act && v_act;
 
+    // The big-sprite control registers are latched HERE, near the end of
+    // vertical blanking, not at the start of it.
+    //
+    // MAME renders a frame from the state at the end of that frame's visible
+    // area, which is after the previous frame's NMI handler has run. Latching
+    // at the start of vblank instead captures the state from before that
+    // handler, and the sprite ends up a whole frame behind -- which the
+    // full-system bench saw as a few hundred differing pixels in the logo,
+    // while every tilemap matched exactly. Four rows of margin is about 8000
+    // system clocks, and the setup arithmetic needs 600.
+    wire frame_latch = row_start && (vcnt == V_BPORCH - 10'd4);
+
     logic v_act_d;
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -316,7 +328,7 @@ module punchout_video (
             spr2_on <= 1'b0;
         end else begin
             case (fst)
-                FS_IDLE: if (vblank_rise) fst <= FS_LATCH;
+                FS_IDLE: if (frame_latch) fst <= FS_LATCH;
 
                 FS_LATCH: begin
                     for (li = 0; li < 8; li++) c1[li] <= spr1_ctrl[8*li +: 8];

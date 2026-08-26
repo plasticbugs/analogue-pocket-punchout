@@ -891,7 +891,7 @@ module core_top
     wire       po_hs, po_vs, po_de, po_ce_pix;
     wire signed [15:0] po_audio;
     wire       po_audio_ce;
-    wire       dbg_line_overrun, dbg_dma_req;
+    wire       dbg_line_overrun, dbg_dma_req, dbg_load_overflow;
     wire [11:0] dbg_worst_line;
 
     punchout_core po (
@@ -914,6 +914,7 @@ module core_top
         .vid_b            ( po_b         ),
         .audio            ( po_audio     ),
         .audio_ce         ( po_audio_ce  ),
+        .vblank_rise      (              ),
         .nv_addr          ( 25'd0        ),
         .nv_q             (              ),
         .nv_d             ( 8'd0         ),
@@ -931,7 +932,8 @@ module core_top
         .dram_clk         ( dram_clk     ),
         .dbg_line_overrun ( dbg_line_overrun ),
         .dbg_worst_line   ( dbg_worst_line   ),
-        .dbg_dma_req      ( dbg_dma_req      )
+        .dbg_dma_req      ( dbg_dma_req      ),
+        .dbg_load_overflow( dbg_load_overflow )
     );
 
     //! Screen shape, from the Interact menu. Measured on the Time Pilot core:

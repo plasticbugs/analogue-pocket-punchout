@@ -22,6 +22,10 @@ local TAG    = os.getenv("PO_TAG")   or string.format("%04d", TARGET)
 -- the only way to cover that path is to set it by hand after freezing. The
 -- frozen byte and the RAM are both updated, so MAME renders what we dump.
 local PALBANK = tonumber(os.getenv("PO_PALBANK") or "")
+-- With PO_NOINPUT the machine is left completely alone, so the run is pure
+-- attract mode: deterministic from reset, and therefore something the RTL can
+-- be held to frame for frame.
+local NOINPUT = os.getenv("PO_NOINPUT") ~= nil
 
 local mach = manager.machine
 local sp   = mach.devices[":maincpu"].spaces["program"]
@@ -129,8 +133,8 @@ emu.register_frame_done(function()
     -- There is no start button: a coin begins play. After that, punch and move
     -- on a few coprime periods so successive target frames land on genuinely
     -- different situations rather than the same pose over and over.
-    hold(coin, frame >= 200 and frame < 206)
-    if frame > 400 then
+    hold(coin, (not NOINPUT) and frame >= 200 and frame < 206)
+    if (not NOINPUT) and frame > 400 then
         hold(b1,    (frame // 23) % 3 == 0)
         hold(b2,    (frame // 31) % 4 == 0)
         hold(b3,    (frame // 97) % 7 == 0)

@@ -165,6 +165,62 @@ The bench now verifies the SDRAM twice before rendering anything: once against
 the memory array, and once by reading a spread of words back through the
 controller. A renderer fault and a memory fault look identical on screen.
 
+## Full system against MAME (Phase 5) — PASSING at the frames measured
+
+`sim/run_system.sh` boots the whole machine from reset -- Z80, memory map, I/O,
+the LS259, the vblank NMI -- runs attract mode with no input at all, and diffs
+the frames it produces against MAME's own bitmaps for the same frame numbers.
+Attract mode is deterministic from reset in both, so the comparison is fair.
+
+```sh
+./tools/capture_attract.sh                    # MAME references, no input
+ROM=build/punchout.rom ./sim/run_system.sh    # boot and compare
+```
+
+The 6502 half of the sound board is T65, which is VHDL and invisible to
+Verilator, so `sim/t65_stub.sv` stands in and the sound CPU sits idle. Nothing
+on the main board waits on it.
+
+### The bug this found that nothing else could
+
+Frame 60 came out 511 pixels different on **both** monitors, with identical
+counts — and identical counts on two independently rendered screens points at
+the one thing they share, the big sprite. Everything else matched exactly.
+
+The chain of elimination, each step a measurement rather than a theory:
+
+1. Was it a frame offset? No: MAME's frames 40 through 80 are pixel-identical
+   to each other, so there is no phase to be wrong about.
+2. Were the sprite control registers stale? No: dumped from the running machine,
+   `dff0-dffd` matched MAME's byte for byte.
+3. Was the sprite's video RAM wrong? No: all 2048 bytes matched MAME's.
+4. Did the renderer disagree given that exact state? No: the reference renderer
+   and the frozen-state RTL bench both render `state_0060` with zero differing
+   pixels.
+
+That leaves what the frozen bench does not exercise — the path the graphics take
+into SDRAM. The frozen bench loads them directly; the real core queues them
+through a write FIFO, because the APF loader has no back-pressure and a write
+posted while the SDRAM is busy would be lost. The queue was 64 entries, the
+bench was feeding a byte every four clocks, and an SDRAM write costs about
+twelve: it overflowed within the first hundred bytes and dropped graphics data
+silently.
+
+Fixed on both sides. The queue is 256 entries, which is far more than the bridge
+can deliver between two writes, and overflow is now latched into
+`dbg_load_overflow` and fails the run rather than corrupting the picture
+invisibly. The bench feeds at one byte per sixteen clocks, which is already
+generous next to an SPI link. Both benches now verify the SDRAM contents before
+rendering anything.
+
+### Also fixed here
+
+The big-sprite control registers are latched near the **end** of vertical
+blanking, not at the start. MAME renders a frame from the state at the end of
+that frame's visible area, which is after the previous frame's NMI handler has
+run; latching at the start of vblank captures the state from before it, and the
+sprite ends up a whole frame behind.
+
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report
   worst-case cycles per line, not just pixel equality.
