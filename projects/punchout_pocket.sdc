@@ -100,8 +100,15 @@ set_output_delay -max -clock dram_clk  1.5 $SDRAM_OUT
 set_output_delay -min -clock dram_clk -0.8 $SDRAM_OUT
 
 # Read capture is on the second internal edge after the chip's -- see above.
+#
+# Setup only. The usual "-hold N-1" that accompanies a -setup N is for a path
+# whose source launches once per N cycles; the chip launches a new word on
+# EVERY edge, and the hazard is the next word arriving before this capture.
+# That is the analyser's default hold edge for a -setup 2 path, one period
+# before the setup edge. A -hold 1 moved the check back to the edge coincident
+# with the launch, which cannot fail, and reported +11 ns where the real margin
+# is about +3.
 set_multicycle_path -setup 2 -from [get_clocks {dram_clk}] -to [get_registers {*|sdram16:*|dq_in[*]}]
-set_multicycle_path -hold  1 -from [get_clocks {dram_clk}] -to [get_registers {*|sdram16:*|dq_in[*]}]
 
 # ==============================================================================
 # CPU multicycle.

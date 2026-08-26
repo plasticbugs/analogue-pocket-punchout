@@ -389,7 +389,25 @@ back, but this time it is *the* relationship -- the pin's clock network is
 4.66 ns longer than the register's, so the physical capture spans two nominal
 periods and the analyser's default pairing checks an edge the data can never
 meet. `projects/punchout_pocket.sdc` walks through every transfer's setup and
-hold with those numbers. The behavioural SDRAM model gained a `PHASE_LAG`
+hold with those numbers. What the analyser then reports on the refit, worst
+corner, no exceptions beyond that one derived multicycle:
+
+| Path | Setup | Hold |
+|---|---|---|
+| chip → `dq_in` (read capture) | +2.57 ns | +0.77 ns |
+| controller → command/address/data pins | +1.26 ns | +4.41 ns |
+| whole design, machine clock | +0.59 ns | +0.25 ns |
+
+(The read-capture setup was predicted at 2.7 from the table above; the
+prediction held. A `-hold 1` that first accompanied the multicycle reported
++11 ns and was deleted: it moved the check to the edge coincident with the
+launch, which cannot fail, when the real hazard is the next word arriving
+before this capture -- the analyser's default hold edge for a `-setup 2` path.)
+
+The capture register now sits in the DDIO input cell at the pin, 1.58 ns from
+the buffer where the first fit had 2.84 through the fabric.
+
+The behavioural SDRAM model gained a `PHASE_LAG`
 parameter so it presents data where an in-phase chip would; against it, the
 old capture point reads zeros -- the bench now reproduces the hardware failure
 -- and the new one reads correctly. Both regressions pass through the new path.
