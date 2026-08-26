@@ -15,6 +15,7 @@
 module punchout_main (
     input  wire         clk,             // 96 MHz
     input  wire         reset,
+    input  wire         pause,           // hold the CPU; video keeps rendering
 
     //! ---- ROM download
     input  wire  [24:0] dl_addr,
@@ -72,7 +73,7 @@ module punchout_main (
             cdiv    <= '0;
             cpu_cen <= 1'b0;
         end else begin
-            cpu_cen <= (cdiv == 5'd23);
+            cpu_cen <= (cdiv == 5'd23) && !pause;
             cdiv    <= (cdiv == 5'd23) ? 5'd0 : cdiv + 5'd1;
         end
     end

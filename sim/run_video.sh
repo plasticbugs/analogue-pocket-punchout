@@ -17,7 +17,7 @@ states=$(ls "$OUT"/state_*.txt 2>/dev/null) || true
 mkdir -p "$BUILD" build
 verilator --cc --exe --build -j 0 -O2 \
     -Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-VARHIDDEN -Wno-PROCASSINIT \
-    -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CASEINCOMPLETE -Wno-UNSIGNED -Wno-PINCONNECTEMPTY -Wno-IMPLICITSTATIC \
+    -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CASEINCOMPLETE -Wno-UNSIGNED -Wno-PINCONNECTEMPTY -Wno-IMPLICITSTATIC -Wno-PINMISSING \
     --top-module tb_video_top --Mdir "$BUILD" -o tb_video \
     rtl/po_ram.sv rtl/po_romload.sv rtl/sdram16.sv rtl/punchout_video.sv \
     sim/sdram_model.sv sim/tb_video_top.sv sim/tb_video.cpp

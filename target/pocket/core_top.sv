@@ -924,8 +924,18 @@ module core_top
     //! the aspect bits: bit 3 shows the overlay, bit 4 flips the SDRAM read
     //! capture to its alternate point (so a timing fault can be probed on the
     //! panel without a rebuild).
-    wire po_ovl_en  = mod_sw0[3];
-    wire po_rd_late = ~mod_sw0[4];
+    //! bits 3 and 5-6: overlay mode (off / status / faults / inputs);
+    //! bit 4: SDRAM read capture alternate; bit 7: freeze the CPUs. The OS
+    //! pauses the core while its menu is open, and that freezes them too, so
+    //! a transient can be caught by opening the menu on it, switching Freeze
+    //! on, and closing the menu.
+    wire [1:0] po_ovl_mode = mod_sw0[3] ? {mod_sw0[6:5] == 2'd0 ? 2'd1 : mod_sw0[6:5]} : 2'd0;
+    wire       po_rd_late  = ~mod_sw0[4];
+    wire       po_freeze   = mod_sw0[7] | pause_core;
+    wire [7:0] po_pad_raw  = { cont1_key[15], cont1_key[14],          // start, select
+                               cont1_key[9],  cont1_key[8],           // R1, L1
+                               cont1_key[4],  cont1_key[5],           // A, B
+                               cont1_key[6],  cont1_key[7] };         // X, Y
 
     punchout_core po (
         .clk              ( clk_sys      ),
@@ -933,7 +943,9 @@ module core_top
         .hw_reset         ( po_hw_reset  ),
         .reset            ( po_reset     ),
         .rd_late          ( po_rd_late   ),
-        .ovl_en           ( po_ovl_en    ),
+        .ovl_mode         ( po_ovl_mode  ),
+        .freeze           ( po_freeze    ),
+        .pad_raw          ( po_pad_raw   ),
         .dl_active        ( ioctl_download ),
         .dl_addr          ( dl_addr      ),
         .dl_data          ( dl_data      ),

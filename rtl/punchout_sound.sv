@@ -28,6 +28,7 @@ module punchout_sound (
     input  wire         clk,             // 96 MHz
     input  wire         reset,           // core reset
     input  wire         snd_reset,       // LS259 bit 3, the main CPU's hold
+    input  wire         pause,           // hold the CPU and the APU
 
     //! ---- ROM download
     input  wire  [24:0] dl_addr,
@@ -65,6 +66,7 @@ module punchout_sound (
             ce_2a03 <= 1'b0;
         end else begin
             {ce_2a03, ce_acc} <= {1'b0, ce_acc} + {1'b0, CE_INC};
+            if (pause) ce_2a03 <= 1'b0;
         end
     end
 

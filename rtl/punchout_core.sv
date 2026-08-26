@@ -26,7 +26,9 @@ module punchout_core (
     input  wire         hw_reset,
     input  wire         reset,
     input  wire         rd_late,         // SDRAM read capture point; 1 is correct
-    input  wire         ovl_en,          // show the diagnostic overlay
+    input  wire   [1:0] ovl_mode,        // 0 off, 1 status, 2 faults (freezes on one), 3 inputs
+    input  wire         freeze,          // hold both CPUs; the video keeps rendering
+    input  wire   [7:0] pad_raw,         // raw pad bits for the inputs overlay
 
     //! ---- ROM download from the APF data loader
     input  wire         dl_active,
@@ -222,16 +224,26 @@ module punchout_core (
 
     // ---- diagnostic overlay: eight squares, two bits each
     //      0 grey = not applicable, 1 green = good, 2 red = bad, 3 yellow = busy
-    wire [15:0] ovl_stat = {
-        2'd0,                                 // 7  unused
-        sd_ready          ? 2'd1 : 2'd3,      // 6  SDRAM controller ready
-        rd_late           ? 2'd1 : 2'd3,      // 5  read timing: default / alternate
-        dbg_pat_st,                           // 4  SDRAM pattern test
-        dbg_rom_st,                           // 3  SDRAM ROM readback vs loader
-        dbg_dma_req       ? 2'd2 : 2'd1,      // 2  DMC asked for a DMA
-        dbg_line_overrun  ? 2'd2 : 2'd1,      // 1  a video line overran its row
-        dbg_load_overflow ? 2'd2 : 2'd1       // 0  loader queue overflowed
-    };
+    function automatic [1:0] rg(input bad); rg = bad ? 2'd2 : 2'd1; endfunction
+    function automatic [1:0] lit(input on); lit = on ? 2'd3 : 2'd0; endfunction
+    logic [15:0] ovl_stat;
+    always_comb begin
+        case (ovl_mode)
+            // status: the boot-time picture
+            2'd1: ovl_stat = { 2'd0, sd_ready ? 2'd1 : 2'd3, rd_late ? 2'd1 : 2'd3,
+                               dbg_pat_st, dbg_rom_st, rg(dbg_dma_req),
+                               rg(dbg_line_overrun), rg(dbg_load_overflow) };
+            // faults, sticky: 0 overrun 1 bg short 2 setup late 3 sd stall
+            //                 4 load overflow 5 dma 6 rom 7 pattern
+            2'd2: ovl_stat = { rg(sticky[7]), rg(sticky[6]), rg(sticky[5]), rg(sticky[4]),
+                               rg(sticky[3]), rg(sticky[2]), rg(sticky[1]), rg(sticky[0]) };
+            // inputs, raw: 0 Y 1 X 2 B 3 A 4 L 5 R 6 Select 7 Start
+            2'd3: ovl_stat = { lit(pad_raw[7]), lit(pad_raw[6]), lit(pad_raw[5]), lit(pad_raw[4]),
+                               lit(pad_raw[3]), lit(pad_raw[2]), lit(pad_raw[1]), lit(pad_raw[0]) };
+            default: ovl_stat = '0;
+        endcase
+    end
+    wire ovl_en = (ovl_mode != 2'd0);
 
     // =========================================================================
     // Video
@@ -254,7 +266,24 @@ module punchout_core (
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
         .vblank_rise(vblank_rise),
-        .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line));
+        .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
+        .dbg_f_overrun(f_overrun), .dbg_f_bg_short(f_bg_short),
+        .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall));
+
+    // ---- sticky faults, cleared on reset or when the overlay mode changes.
+    //      In Faults mode a fault also freezes the CPUs, so the frame it
+    //      happened in stays on the screen to be looked at.
+    wire f_overrun, f_bg_short, f_setup_late, f_sd_stall;
+    logic [7:0] sticky;
+    logic [1:0] ovl_mode_d;
+    always_ff @(posedge clk) begin
+        ovl_mode_d <= ovl_mode;
+        if (hw_reset || reset || ovl_mode != ovl_mode_d) sticky <= '0;
+        else sticky <= sticky | {
+            dbg_pat_st == 2'd2, dbg_rom_st == 2'd2, dbg_dma_req, dbg_load_overflow,
+            f_sd_stall, f_setup_late, f_bg_short, f_overrun };
+    end
+    wire cpu_hold = freeze || ((ovl_mode == 2'd2) && (|sticky));
 
     // =========================================================================
     // Main board
@@ -264,7 +293,7 @@ module punchout_core (
     wire       snd_reset, vlm_rst, vlm_st, vlm_vcu;
 
     punchout_main u_main (
-        .clk(clk), .reset(mach_reset),
+        .clk(clk), .reset(mach_reset), .pause(cpu_hold),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .vblank_rise(vblank_rise),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),
@@ -282,7 +311,7 @@ module punchout_core (
     // Sound board
     // =========================================================================
     punchout_sound u_sound (
-        .clk(clk), .reset(mach_reset), .snd_reset(snd_reset),
+        .clk(clk), .reset(mach_reset), .snd_reset(snd_reset), .pause(cpu_hold),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .vblank_rise(vblank_rise),
         .soundlatch(soundlatch), .soundlatch2(soundlatch2),

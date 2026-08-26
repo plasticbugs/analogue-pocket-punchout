@@ -79,7 +79,12 @@ module punchout_video (
 
     //! ---- diagnostics
     output logic        dbg_line_overrun, // a line renderer ran past its row
-    output logic [11:0] dbg_worst_line    // worst cycles taken by any line
+    output logic [11:0] dbg_worst_line,   // worst cycles taken by any line
+    //! one-clock pulses, made sticky by the core for the Faults overlay:
+    output logic        dbg_f_overrun,    // row started with the last line unfinished
+    output logic        dbg_f_bg_short,   // ...and it was still in the background pass
+    output logic        dbg_f_setup_late, // sprite geometry took > 700 clocks
+    output logic        dbg_f_sd_stall    // one SDRAM read took > 96 clocks
 );
 
     // =========================================================================
@@ -515,6 +520,8 @@ module punchout_video (
     end
 
     logic [11:0] line_cycles;
+    logic [11:0] setup_cyc;
+    logic  [7:0] sd_cyc;
 
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -523,8 +530,12 @@ module punchout_video (
             dbg_line_overrun <= 1'b0;
             dbg_worst_line <= '0;
             line_cycles    <= '0;
+            setup_cyc      <= '0;
+            sd_cyc         <= '0;
             sd_rd          <= 1'b0;
             lb_we          <= 1'b0;
+            dbg_f_overrun <= 1'b0; dbg_f_bg_short <= 1'b0;
+            dbg_f_setup_late <= 1'b0; dbg_f_sd_stall <= 1'b0;
         end else begin
             lb_we <= 1'b0;
             sd_rd <= 1'b0;
@@ -536,8 +547,24 @@ module punchout_video (
 
             if (rs != R_IDLE) line_cycles <= line_cycles + 12'd1;
 
+            dbg_f_overrun    <= 1'b0;
+            dbg_f_bg_short   <= 1'b0;
+            dbg_f_setup_late <= 1'b0;
+            dbg_f_sd_stall   <= 1'b0;
+            if (rs == R_SETUP) begin
+                if (setup_cyc != 12'hfff) setup_cyc <= setup_cyc + 12'd1;
+                if (setup_cyc == 12'd700) dbg_f_setup_late <= 1'b1;
+            end else setup_cyc <= '0;
+            if (rs == R_S1_R0 || rs == R_S1_R1 || rs == R_S2_R) begin
+                if (sd_cyc != 8'hff) sd_cyc <= sd_cyc + 8'd1;
+                if (sd_cyc == 8'd96) dbg_f_sd_stall <= 1'b1;
+            end else sd_cyc <= '0;
+
             if (row_start) begin
                 if (rs != R_IDLE) dbg_line_overrun <= 1'b1;
+                if (rs != R_IDLE) dbg_f_overrun <= 1'b1;
+                if (rs == R_SETUP || rs == R_BG_INIT || rs == R_BG_A || rs == R_BG_B
+                    || rs == R_BG_C || rs == R_BG_EMIT) dbg_f_bg_short <= 1'b1;
                 if (line_cycles > dbg_worst_line) dbg_worst_line <= line_cycles;
                 line_cycles <= '0;
 
