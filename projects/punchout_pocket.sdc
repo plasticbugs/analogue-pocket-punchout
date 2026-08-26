@@ -131,6 +131,19 @@ set_multicycle_path -hold  7 -from [get_registers {*|tv80_core:*|*}] -to [get_re
 set_multicycle_path -setup 8 -from [get_registers {*|T65:*|*}] -to [get_registers {*|T65:*|*}]
 set_multicycle_path -hold  7 -from [get_registers {*|T65:*|*}] -to [get_registers {*|T65:*|*}]
 
+# The 6502 and the APU only ever talk on enables. T65 changes its address and
+# data on its enable, once per ~54 clocks; the APU captures a write on the
+# phi2 edge 27 clocks after it, and its other registers on aclk enables that
+# coincide with the NEXT T65 enable -- at which point they see the outputs that
+# have been stable for the full 54. So a T65-to-APU path has tens of clocks by
+# construction (audited: every always_ff in apu.sv is enable-gated except
+# phi2_old, which is not on this path), and 4 is a fraction of that. Reads back
+# the other way are the same argument with the roles swapped.
+set_multicycle_path -setup 4 -from [get_registers {*|T65:*|*}] -to [get_registers {*|APU:*|*}]
+set_multicycle_path -hold  3 -from [get_registers {*|T65:*|*}] -to [get_registers {*|APU:*|*}]
+set_multicycle_path -setup 4 -from [get_registers {*|APU:*|*}] -to [get_registers {*|T65:*|*}]
+set_multicycle_path -hold  3 -from [get_registers {*|APU:*|*}] -to [get_registers {*|T65:*|*}]
+
 # ==============================================================================
 # The APU's mixer.
 #
