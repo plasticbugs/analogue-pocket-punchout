@@ -99,3 +99,4 @@ _tmp
 # --- Python ---
 __pycache__/
 *.pyc
+/artifacts_sys/
