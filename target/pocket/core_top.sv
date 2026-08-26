@@ -934,6 +934,7 @@ module core_top
     wire       po_freeze   = mod_sw0[7] | pause_core;
     wire [1:0] po_probe_page = mod_sw1[1:0];
     wire [1:0] po_vid_mode   = mod_sw1[3:2];
+    wire [1:0] po_rtest      = mod_sw1[5:4];
     wire [7:0] po_pad_raw  = { cont1_key[15], cont1_key[14],          // start, select
                                cont1_key[9],  cont1_key[8],           // R1, L1
                                cont1_key[4],  cont1_key[5],           // A, B
@@ -949,6 +950,7 @@ module core_top
         .freeze           ( po_freeze    ),
         .probe_page       ( po_probe_page ),
         .vid_mode         ( po_vid_mode  ),
+        .rtest            ( po_rtest     ),
         .cur_move         ( {m_down, m_up, m_left, m_right} ),
         .cur_fast         ( m_btn2 | m_btn3 ),   // KO buttons: 8-pixel steps
         .pad_raw          ( po_pad_raw   ),

@@ -97,6 +97,10 @@ module punchout_video (
     input  wire   [1:0] vid_mode,         // 0 palette, 1 raw index, 2 writer tag, 3 index 7 in white
     //! ---- the inspector's crosshair: parked on the hit pixel by the probe,
     //!      then moved with the pad; the record is of the pixel under it
+    //! ---- render tests, to bisect a hardware-only fault:
+    //!      bit 0: the background pass reads the LIVE tilemap RAMs and the
+    //!             snapshot copier is stopped   bit 1: no sprite passes
+    input  wire   [1:0] rtest,
     input  wire   [3:0] cur_move,         // {down, up, left, right}, sampled once per frame
     input  wire         cur_fast,         // move 8 instead of 1
     output logic        dbg_f_black,
@@ -215,7 +219,8 @@ module punchout_video (
     logic  [9:0] bgt_ridx;
     logic [10:0] bgb_ridx;
     logic  [8:0] s1_ridx, s2_ridx;
-    logic  [7:0] bgt_code, bgt_attr, bgb_code, bgb_attr;
+    logic  [7:0] bgt_code, bgt_attr, bgb_code, bgb_attr;       // what the renderer sees
+    logic  [7:0] bgt_code_s, bgt_attr_s, bgb_code_s, bgb_attr_s; // ...from the shadow
     logic  [7:0] bgt_q0, bgt_q1, bgb_q0, bgb_q1;
     logic  [7:0] s1_b [0:3];
     logic  [7:0] s2_b [0:3];
@@ -225,7 +230,7 @@ module punchout_video (
     // ---- the snapshot copier: walks every entry during row 17 of the back
     //      porch (a row is 2240 clocks; the walk is 2048 plus two of latency)
     wire         row_start;
-    wire         cp_start = row_start && (vcnt == V_BPORCH - 10'd3);
+    wire         cp_start = row_start && (vcnt == V_BPORCH - 10'd3) && !rtest[0];
     logic [11:0] cp_addr;             // bit 11 = running
     wire         cp_run  = cp_addr[11];
     wire  [10:0] cp_a    = cp_addr[10:0];
@@ -284,35 +289,41 @@ module punchout_video (
     po_dpram #(.AW(10), .DW(8)) u_bgt0 (.clk(clk),
         .a_addr(cpu_vaddr[10:1]), .a_we(cpu_vwe && vsel_top && !cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgt_q0),
-        .b_addr(cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_l0));
+        .b_addr(rtest[0] ? bgt_ridx : cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_l0));
     po_dpram #(.AW(10), .DW(8)) u_bgt1 (.clk(clk),
         .a_addr(cpu_vaddr[10:1]), .a_we(cpu_vwe && vsel_top &&  cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgt_q1),
-        .b_addr(cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_l1));
+        .b_addr(rtest[0] ? bgt_ridx : cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_l1));
     po_dpram #(.AW(11), .DW(8)) u_bgb0 (.clk(clk),
         .a_addr(cpu_vaddr[11:1]), .a_we(cpu_vwe && vsel_bot && !cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgb_q0),
-        .b_addr(cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l0));
+        .b_addr(rtest[0] ? bgb_ridx : cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l0));
     po_dpram #(.AW(11), .DW(8)) u_bgb1 (.clk(clk),
         .a_addr(cpu_vaddr[11:1]), .a_we(cpu_vwe && vsel_bot &&  cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgb_q1),
-        .b_addr(cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l1));
+        .b_addr(rtest[0] ? bgb_ridx : cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l1));
 
     // shadow copies: port A the copier; port B the renderer, and the
     // write-through while the renderer is idle
     /* verilator lint_off PINCONNECTEMPTY */
     po_dpram #(.AW(10), .DW(8)) u_sbgt0 (.clk(clk),
         .a_addr(cp_wa[9:0]), .a_we(cp_we && !cp_wa[10]), .a_d(bgt_l0), .a_q(),
-        .b_addr(wt_s3[11] ? wt_a3[9:0] : bgt_ridx), .b_we(wt_s3[11]), .b_d(wt_d3), .b_q(bgt_code));
+        .b_addr(wt_s3[11] ? wt_a3[9:0] : bgt_ridx), .b_we(wt_s3[11]), .b_d(wt_d3), .b_q(bgt_code_s));
     po_dpram #(.AW(10), .DW(8)) u_sbgt1 (.clk(clk),
         .a_addr(cp_wa[9:0]), .a_we(cp_we && !cp_wa[10]), .a_d(bgt_l1), .a_q(),
-        .b_addr(wt_s3[10] ? wt_a3[9:0] : bgt_ridx), .b_we(wt_s3[10]), .b_d(wt_d3), .b_q(bgt_attr));
+        .b_addr(wt_s3[10] ? wt_a3[9:0] : bgt_ridx), .b_we(wt_s3[10]), .b_d(wt_d3), .b_q(bgt_attr_s));
     po_dpram #(.AW(11), .DW(8)) u_sbgb0 (.clk(clk),
         .a_addr(cp_wa), .a_we(cp_we), .a_d(bgb_l0), .a_q(),
-        .b_addr(wt_s3[9] ? wt_a3 : bgb_ridx), .b_we(wt_s3[9]), .b_d(wt_d3), .b_q(bgb_code));
+        .b_addr(wt_s3[9] ? wt_a3 : bgb_ridx), .b_we(wt_s3[9]), .b_d(wt_d3), .b_q(bgb_code_s));
     po_dpram #(.AW(11), .DW(8)) u_sbgb1 (.clk(clk),
         .a_addr(cp_wa), .a_we(cp_we), .a_d(bgb_l1), .a_q(),
-        .b_addr(wt_s3[8] ? wt_a3 : bgb_ridx), .b_we(wt_s3[8]), .b_d(wt_d3), .b_q(bgb_attr));
+        .b_addr(wt_s3[8] ? wt_a3 : bgb_ridx), .b_we(wt_s3[8]), .b_d(wt_d3), .b_q(bgb_attr_s));
+    // the renderer's view: the shadow, or under test the live RAM directly
+    // (same one-cycle read latency on both)
+    assign bgt_code = rtest[0] ? bgt_l0 : bgt_code_s;
+    assign bgt_attr = rtest[0] ? bgt_l1 : bgt_attr_s;
+    assign bgb_code = rtest[0] ? bgb_l0 : bgb_code_s;
+    assign bgb_attr = rtest[0] ? bgb_l1 : bgb_attr_s;
 
     generate
         genvar lane;
@@ -787,7 +798,7 @@ module punchout_video (
                         px <= {1'b0, sx1[7:0]};
                         cx <= startx1;
                         cy <= s1y[23:16];
-                        if (!spr1_on || (sx1 > 9'd255)
+                        if (rtest[1] || !spr1_on || (sx1 > 9'd255)
                             || (rend_top ? !spr1_top_en : !spr1_bot_en)
                             || (s1y >= HEIGHTSHIFTED))
                             rs <= R_S2_START;
@@ -858,7 +869,7 @@ module punchout_video (
                         px <= {1'b0, sx2[7:0]};
                         cx <= startx2;
                         cy <= s2y[23:16];
-                        if (rend_top || !spr2_on || (sx2 > 9'd255)
+                        if (rtest[1] || rend_top || !spr2_on || (sx2 > 9'd255)
                             || (s2y >= HEIGHTSHIFTED))
                             rs <= R_DONE;
                         else

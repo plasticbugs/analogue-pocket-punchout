@@ -29,6 +29,7 @@ module punchout_core (
     input  wire   [1:0] ovl_mode,        // 0 off, 1 status, 2 faults (freezes on one), 3 black probe (freezes on a hit)
     input  wire   [1:0] probe_page,      // which 16 bits of the probe record the overlay shows
     input  wire   [1:0] vid_mode,        // 0 palette, 1 raw index, 2 writer tag, 3 index 7 white
+    input  wire   [1:0] rtest,           // render tests: bit 0 background from live RAM, bit 1 sprites off
     input  wire   [3:0] cur_move,        // inspector crosshair: {down, up, left, right}, held
     input  wire         cur_fast,        // ...in steps of 8
     input  wire         freeze,          // hold both CPUs; the video keeps rendering
@@ -321,7 +322,7 @@ module punchout_core (
         .dbg_f_overrun(f_overrun), .dbg_f_bg_short(f_bg_short),
         .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall),
         .probe_clr(ovl_mode != ovl_mode_d), .vid_mode(vid_mode), .dbg_f_black(f_black),
-        .cur_move(cur_move), .cur_fast(cur_fast),
+        .cur_move(cur_move), .cur_fast(cur_fast), .rtest(rtest),
         .probe_rec(probe_rec), .probe_cnt(probe_cnt),
         .probe_wr_bot(probe_wr_bot), .probe_wr_top(probe_wr_top));
 

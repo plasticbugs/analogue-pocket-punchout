@@ -671,6 +671,36 @@ button held: 8-pixel steps) and the pages show the record of whatever pixel
 it is on, refreshed every frame -- so the bar, the canvas beside it and the
 VS letters can each be read exactly.
 
+**Fifth round** (build 6fdf899, the inspector), four spots read while
+frozen on the bar, every field self-consistent:
+
+| spot | index | writer | attr | code | map address | PROM |
+|---|---|---|---|---|---|---|
+| bar, x 44 line 154 | 47 (colour 11 pen 3) | bg | **0x2C** | 0xFF | bottom row 21 col 22 | F F F black |
+| canvas below, row 23 | 7 (colour 1 pen 3) | bg | 0x07 | 0xFF | bottom row 23 col 22 | 2 5 9 tan |
+| VS letter (yellow) | 38 (colour 9 pen 2) | bg | **0x24** | 0xCB | top row 18 col 17 | 0 0 F yellow |
+
+The VS cell is the right cell -- tile 0xCB does live at (18,17) -- with the
+right code byte and the wrong attribute: 0x24 (colour 9) for 0x18 (colour
+6). The bar cell is the canvas tile with the wrong attribute: 0x2C (colour
+11) for 0x07. Neither wrong value exists anywhere in that map. **The code
+lane reads right and the attribute lane reads wrong**, in both maps, in
+cells the CPU has not written (the divergence counters were zero), from a
+state that is static while frozen. The timing report puts every one of the
+40 tightest paths in the SDRAM controller (worst +0.36 ns); nothing in the
+tilemap path is near the edge, and the RAMs are inferred as written
+(bidirectional dual port, OLD_DATA on mixed ports). So the next build
+bisects on the hardware: a **Render Test** menu that makes the background
+pass read the live RAMs directly with the copier stopped, and one that
+disables the sprite passes.
+
+(The x-0 pixel of a line gives unstable readings -- code 0x92 / address 1
+once, address 0x30 the next time -- and is set aside; the readings above
+are from ordinary pixels. Spots A and B also put column 22 at x 44, i.e. a
+row scroll of 133 rather than MAME's 191 at the equivalent moment; the game
+does move the scroll during a fight, so that may simply be the state the
+Pocket's game was in, and the crosshair on a ring post will say.)
+
 The first probe tested the palette index for 0-3 (colour 0). It fired on the
 credit screen's black tiles, as it should, and **not on the bar** -- so the
 bar is not colour 0. The fight palette has 49 black entries in bank 0 --
