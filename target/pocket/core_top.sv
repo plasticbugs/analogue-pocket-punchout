@@ -845,7 +845,25 @@ module core_top
     //! ------------------------------------------------------------------------
     wire reset_sw_s;
     synch_3 sync_rst(reset_sw, reset_sw_s, clk_sys);
-    wire po_reset = reset_sw_s | ioctl_download | ~pll_core_locked_s;
+
+    //! NOT reset during the download. The Time Pilot '84 core this file came
+    //! from held its machine in reset for the whole load, which was harmless
+    //! there: every ROM went to block RAM, and block RAM takes the loader's
+    //! writes whether or not anything else is running. Here 272 KB of graphics
+    //! go through a write queue into SDRAM, and that queue -- and the SDRAM
+    //! controller behind it -- were being held in reset for exactly as long as
+    //! the bytes were arriving. Not one reached the chip. The block RAMs still
+    //! filled, so the first hardware build had perfect backgrounds, garbage
+    //! sprites, and a self-test reading "ROM missing, chip fine, queue never
+    //! overflowed" -- which is precisely this.
+    //!
+    //! punchout_core holds the machine itself (CPUs, video, sound) in reset
+    //! while dl_active is high and until its queue has drained and its
+    //! self-test has run; the loader path must stay alive through all of it.
+    //! This line is outside every simulation bench, which stop at
+    //! punchout_core, so it is kept to the two things that genuinely mean
+    //! "reset": the menu action and the PLL not yet locked.
+    wire po_reset = reset_sw_s | ~pll_core_locked_s;
 
     //! ROM: a single slot holding the flat 371,712-byte image built by
     //! tools/mra_build.py. punchout_core decodes the regions itself and sends
