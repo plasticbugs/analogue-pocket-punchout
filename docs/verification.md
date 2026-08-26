@@ -482,6 +482,36 @@ sprite twice over never once showed in simulation; it will now.
 
 Fourth report: all seven squares green, and the game plays.
 
+### 5. A flashing black bar when the opponent comes in close
+
+With the game playing, one artefact: after a knock-down, as the opponent zooms
+in to gloat, a black bar the sprite's width flashed at the left of the fight
+screen, a row above where the Game Over box would later sit.
+
+Measured in order. Every frozen frame of the zoom sweep rendered pixel-exact
+(`scratchpad/lose`, eleven states, zoom 388 down to 192, X wrapping through
+4096). The Game Over box turned out to slide in by row scroll, two rows at a
+time from opposite sides; seven frozen frames mid-slide -- the first states
+with a non-uniform scroll table -- also rendered pixel-exact in both the
+reference and the RTL. So the bar was dynamic: something that only happens
+between frames.
+
+What changes between those frames is the seven-byte sprite control block, and
+the renderer latched it once per frame at a single instant (raster row 16).
+The system bench's histogram of where the game writes that block puts 346 of
+361 writes in rows 696-719 -- the two dozen rows after the NMI -- with the
+rest scattered through the active frame. A heavier frame that pushed the
+handler thirty rows later would put the latch in the middle of the writes, and
+a torn block (new Y low byte, old high bit) parks the sprite 256 lines away
+for one frame. The board reads the registers as the beam scans; a torn value
+costs it one scanline.
+
+The renderer now does the same: the sprite geometry is computed at the start
+of every line from the live registers, and the row-scroll table and palette
+bank are read live too. About 80 clocks per line; worst measured line 1603 of
+2240. Every frozen set still passes and attract mode is still identical to
+MAME.
+
 ### The overlay, and why the next report will be specific
 
 METHODOLOGY §4 says to add the diagnostic overlay before it is needed; it was
