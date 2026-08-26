@@ -389,23 +389,44 @@ back, but this time it is *the* relationship -- the pin's clock network is
 4.66 ns longer than the register's, so the physical capture spans two nominal
 periods and the analyser's default pairing checks an edge the data can never
 meet. `projects/punchout_pocket.sdc` walks through every transfer's setup and
-hold with those numbers. What the analyser then reports on the refit, worst
-corner, no exceptions beyond that one derived multicycle:
+hold with those numbers. Getting from there to a build that closes took three
+more fits, each of which taught something the previous one could not:
 
-| Path | Setup | Hold |
+* **The fitter was tuning the data pins' input delay chains per pin, per
+  build** -- 1 unit on one `dram_dq`, 10 on another -- to buy hold, and the
+  pin-to-register delay moved from 2.84 ns to 5.6 ns between two compiles of
+  the same RTL. CI reproduced the same -0.193 ns exactly, so it was
+  deterministic, not random: the fitter's response to the hold constraint.
+  `D1_DELAY 0` / `D3_DELAY 0` on `dram_dq[*]` pin it. (The first attempt used
+  `PAD_TO_INPUT_REGISTER_DELAY`, which is not the Cyclone V name and did
+  nothing; the fit report's Delay Chain Summary names the columns.)
+* **A `-hold 1` that first accompanied the multicycle reported +11 ns and was
+  wrong.** It moved the check to the edge coincident with the launch, which
+  cannot fail; the real hazard is the next word arriving before this capture,
+  which is the analyser's default hold edge for a `-setup 2` path.
+* **The slow corner alone was flattering.** With the phase centred there
+  (+1.67 / +1.68), the fast corner gave -1.03 of hold. The launch path -- clock
+  out through the DDIO cell and output buffer, across the chip and back -- has
+  about 4.7 ns more process- and temperature-dependent delay than the capture
+  clock, and STA's corners assume they diverge together. Across all four
+  corners the read-capture window is **0.64 ns** wide.
+
+The phase is set to the middle of that multi-corner window, 5859 ps (45 steps
+of the 960 MHz VCO's 130.208 ps quantum -- 4550 was rejected as illegal for
+not being one). Final numbers, no exceptions beyond the one derived multicycle:
+
+| Path | Slow corner | Fast corner |
 |---|---|---|
-| chip → `dq_in` (read capture) | +2.57 ns | +0.77 ns |
-| controller → command/address/data pins | +1.26 ns | +4.41 ns |
-| whole design, machine clock | +0.59 ns | +0.25 ns |
+| chip → `dq_in` (read capture) setup | **+0.37 ns** | +4.41 ns |
+| chip → `dq_in` (read capture) hold | +2.98 ns | **+0.28 ns** |
+| controller → command/address/data pins, setup | +3.06 ns | +3.52 ns |
+| controller → pins, hold | +2.97 ns | +3.55 ns |
+| whole design, worst of any corner | setup +0.37 | hold +0.10 |
 
-(The read-capture setup was predicted at 2.7 from the table above; the
-prediction held. A `-hold 1` that first accompanied the multicycle reported
-+11 ns and was deleted: it moved the check to the edge coincident with the
-launch, which cannot fail, when the real hazard is the next word arriving
-before this capture -- the analyser's default hold edge for a `-setup 2` path.)
-
-The capture register now sits in the DDIO input cell at the pin, 1.58 ns from
-the buffer where the first fit had 2.84 through the fabric.
+Both were predicted to the second decimal from the previous fit's numbers
+before this one ran. Typical silicon sits ~1.6 ns from either edge of the
+window; every other ~100 MHz SDRAM core on this platform gets there by leaving
+the pins unconstrained and never asking.
 
 The behavioural SDRAM model gained a `PHASE_LAG`
 parameter so it presents data where an in-phase chip would; against it, the
