@@ -12,5 +12,10 @@ update_timing_netlist
 set n [report_timing -setup -npaths 40 -detail full_path \
         -file output_files/worst_paths.txt]
 puts "report_timing returned: $n"
+report_clocks -file output_files/clocks.txt
+report_sdc    -file output_files/sdc_applied.txt
+set nh [report_timing -hold -npaths 10 -detail full_path \
+        -file output_files/worst_hold.txt]
+puts "hold returned: $nh"
 delete_timing_netlist
 project_close

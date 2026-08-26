@@ -38,6 +38,8 @@ module tb_system_top (
     output wire  [11:0] dbg_worst_line,
     output wire         dbg_dma_req,
     output wire         dbg_load_overflow,
+    output wire   [1:0] dbg_rom_st,
+    output wire   [1:0] dbg_pat_st,
     output wire signed [15:0] audio,
     output wire         audio_ce,
     output wire  [63:0] dbg_spr1_ctrl,
@@ -52,7 +54,7 @@ module tb_system_top (
     wire        sdqml, sdqmh, scs_n, sras_n, scas_n, swe_n, scke, sclk;
 
     punchout_core u_core (
-        .clk(clk), .reset(reset),
+        .clk(clk), .clk_sdram(clk), .reset(reset), .rd_late(1'b1), .ovl_en(1'b0),
         .dl_active(dl_active), .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
@@ -63,7 +65,8 @@ module tb_system_top (
         .dram_ras_n(sras_n), .dram_cas_n(scas_n), .dram_we_n(swe_n),
         .dram_cke(scke), .dram_clk(sclk),
         .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
-        .dbg_dma_req(dbg_dma_req), .dbg_load_overflow(dbg_load_overflow));
+        .dbg_dma_req(dbg_dma_req), .dbg_load_overflow(dbg_load_overflow),
+        .dbg_rom_st(dbg_rom_st), .dbg_pat_st(dbg_pat_st));
 
 
     assign dbg_spr1_ctrl = u_core.spr1_ctrl;

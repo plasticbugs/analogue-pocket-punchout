@@ -25,6 +25,31 @@
         ]
       },
       {
+        "name": "Diagnostics Overlay",
+        "id": 40,
+        "type": "check",
+        "enabled": true,
+        "persist": false,
+        "address": "0xF2000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFFF7",
+        "value": "0x00000008"
+      },
+      {
+        "name": "SDRAM Read Timing",
+        "id": 41,
+        "type": "list",
+        "enabled": true,
+        "persist": false,
+        "address": "0xF2000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFFEF",
+        "options": [
+          { "name": "Normal",         "value": "0x00000000" },
+          { "name": "Alternate (test)", "value": "0x00000010" }
+        ]
+      },
+      {
         "name": "Difficulty",
         "id": 31,
         "type": "list",

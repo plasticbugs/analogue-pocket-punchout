@@ -61,6 +61,10 @@ module punchout_video (
     input  wire  [15:0] sd_dout16,
     input  wire         sd_ready,
 
+    //! ---- diagnostic overlay: eight 2-bit status squares along the bottom
+    input  wire         ovl_en,
+    input  wire  [15:0] ovl_stat,
+
     //! ---- video out, in the clk domain, qualified by ce_pix
     output logic        ce_pix,
     output logic        hsync,
@@ -739,9 +743,23 @@ module punchout_video (
         .ra(disp_x), .re(ce_pix), .q(lb1_q));
     wire [7:0] lb_rd = lb_sel ? lb1_q : lb0_q;
 
+    // Diagnostic overlay: eight 12x8 squares in the bottom eight rows, at the
+    // left of the fight screen, colour from two status bits each. Hidden
+    // behind a menu option. Cheap, and the only way to see inside a fault that
+    // only shows on real hardware (METHODOLOGY 4).
+    wire        ovl_row  = ovl_en && (act_y >= 10'd664);
+    wire  [2:0] ovl_idx  = act_x[6:4];
+    wire        ovl_cell = ovl_row && (act_x < 10'd128)
+                        && (act_x[3:0] >= 4'd2) && (act_x[3:0] < 4'd14);
+    wire  [1:0] ovl_st   = ovl_stat[2 * ovl_idx +: 2];
+    logic       dl_ovl;
+    logic [1:0] dl_ost;
+
     logic [2:0] dl_show, dl_de, dl_hs, dl_vs, dl_top;
 
     always_ff @(posedge clk) if (ce_pix) begin
+        dl_ovl  <= ovl_cell;
+        dl_ost  <= ovl_st;
         dl_show <= {dl_show[1:0], show};
         dl_de   <= {dl_de[1:0],   raw_de};
         dl_hs   <= {dl_hs[1:0],   raw_hs};
@@ -765,10 +783,19 @@ module punchout_video (
     wire [3:0] g4 = dl_top[0] ? prom_q[1][3:0] : prom_q[4][3:0];
     wire [3:0] b4 = dl_top[0] ? prom_q[2][3:0] : prom_q[5][3:0];
 
+    wire [23:0] ovl_rgb = (dl_ost == 2'd1) ? 24'h00C800 :     // green
+                          (dl_ost == 2'd2) ? 24'hDC0000 :     // red
+                          (dl_ost == 2'd3) ? 24'hDCC800 :     // yellow
+                                             24'h303030;      // grey
+
     always_ff @(posedge clk) if (ce_pix) begin
-        vid_r <= dl_show[0] ? ~{r4, r4} : 8'h00;
-        vid_g <= dl_show[0] ? ~{g4, g4} : 8'h00;
-        vid_b <= dl_show[0] ? ~{b4, b4} : 8'h00;
+        if (dl_ovl) begin
+            {vid_r, vid_g, vid_b} <= ovl_rgb;
+        end else begin
+            vid_r <= dl_show[0] ? ~{r4, r4} : 8'h00;
+            vid_g <= dl_show[0] ? ~{g4, g4} : 8'h00;
+            vid_b <= dl_show[0] ? ~{b4, b4} : 8'h00;
+        end
         de    <= dl_de[0];
         hsync <= dl_hs[0];
         vsync <= dl_vs[0];

@@ -43,27 +43,65 @@ set_clock_groups -asynchronous \
 # ==============================================================================
 # SDRAM
 #
-# sdram16 drives SDRAM_CLK from a DDIO cell fed by clk_sys, so the chip clocks
-# on the inverted edge and the controller has half a period of setup either way.
-# The generated clock has to be declared for the I/O paths to be analysed at
-# all; without it Quartus reports them as unconstrained and the fit is a guess.
+# The chip is clocked from core_pll general[3]: the same 96 MHz as the
+# controller, phase-shifted. The phase and the exception below are DERIVED from
+# the analyser's own numbers on a real fit, not assumed:
 #
-# The board delays are the usual Pocket figures: short traces, one load.
+#   clock network, PLL output -> dram_clk pin          12.56 ns
+#   clock network, PLL output -> dq_in register clock   7.9 ns
+#   dram_dq pin -> dq_in register                        2.84 ns
+#   chip access time tAC (max) + board                   7.0 ns
+#   chip output hold tOH (min)                           2.5 ns
+#
+# The pin edge therefore trails the same nominal PLL edge by 4.66 ns more than
+# the register's clock does. With phase 3650 ps the chip's edge at its pin
+# lands about 2.1 ns BEFORE the controller's internal edge, which puts every
+# transfer near the middle of its window:
+#
+#   command launched on our edge E: at the pin E+3, sampled by the chip at its
+#     edge E+8.3 -- 5.3 ns setup; the previous chip edge was E-2.1 and the old
+#     command holds until E+3 -- 5.1 ns hold.
+#   read data: the chip drives it 7.0 ns after its edge, it reaches dq_in 9.84
+#     after, i.e. 7.7 ns after our edge -- captured on our NEXT edge with 2.7 ns
+#     to spare; the following word cannot arrive before 13.3 -- 2.9 ns hold.
+#
+# That capture is one full internal period after the chip's edge, but the
+# nominal relationship between the two clocks is only 6.76 ns, because the
+# extra 4.66 ns of network delay to the pin is not part of the waveform. So the
+# analyser's default pairing checks a capture edge the data cannot possibly
+# meet, and a multicycle of 2 (hold 1) moves it to the edge the RTL actually
+# uses -- READ+4 at the pins, rd_late=1 in sdram16. This is the exception the
+# first build lacked a basis for: it had the same numbers on a clock inverted
+# by hand, and there the second edge was still 5.2 ns short.
+#
+# The original controller clocked the chip on an inverted copy of our clock and
+# captured on the first edge, leaving 5.2 ns for a 7 ns access. With the
+# exception that hid it removed, every dram_dq input missed by 7.5 ns, and on
+# the Pocket every sprite was garbage while the block-RAM backgrounds were
+# perfect.
+#
+# The clock is named dram_clk because the BSP (sys_constr.sdc) applies the
+# chip's tDS/tDH to a clock of that name -- though it runs before this file and
+# never finds it, so those two lines are repeated below.
 # ==============================================================================
-set SDRAM_CLK_PIN [get_ports {dram_clk}]
-create_generated_clock -name dram_clk_out -source \
-    [get_pins {ic|core_pll|core_pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}] \
-    -invert $SDRAM_CLK_PIN
+create_generated_clock -name dram_clk -source \
+    [get_pins {ic|core_pll|core_pll_inst|altera_pll_i|general[3].gpll~PLL_OUTPUT_COUNTER|divclk}] \
+    [get_ports {dram_clk}]
 
-set_input_delay  -max -clock dram_clk_out 6.4 [get_ports {dram_dq[*]}]
-set_input_delay  -min -clock dram_clk_out 3.2 [get_ports {dram_dq[*]}]
-set_output_delay -max -clock dram_clk_out 1.5 [get_ports {dram_dq[*] dram_a[*] dram_ba[*] dram_dqm[*] dram_ras_n dram_cas_n dram_we_n dram_cke}]
-set_output_delay -min -clock dram_clk_out -0.8 [get_ports {dram_dq[*] dram_a[*] dram_ba[*] dram_dqm[*] dram_ras_n dram_cas_n dram_we_n dram_cke}]
+set_input_delay -max -clock dram_clk 7.0 [get_ports {dram_dq[*]}]
+set_input_delay -min -clock dram_clk 2.5 [get_ports {dram_dq[*]}]
 
-# The controller reads DQ one full clock after the CAS latency expires, so the
-# capture is a whole period away from the launch, not half.
-set_multicycle_path -setup 2 -from [get_ports {dram_dq[*]}] -to [get_registers {*|sdram16:*|data[*]}]
-set_multicycle_path -hold  1 -from [get_ports {dram_dq[*]}] -to [get_registers {*|sdram16:*|data[*]}]
+# The BSP's sys_constr.sdc carries these same two lines, but it is read before
+# this file -- it has to be, it creates the PLL clocks -- so dram_clk does not
+# exist yet when it runs and they are silently ignored. Repeated here, after
+# the clock is created. tDS 1.5 ns, tDH 0.8 ns from the datasheet.
+set SDRAM_OUT [get_ports {dram_a[*] dram_ba[*] dram_cke dram_dqm[*] dram_dq[*] dram_ras_n dram_cas_n dram_we_n}]
+set_output_delay -max -clock dram_clk  1.5 $SDRAM_OUT
+set_output_delay -min -clock dram_clk -0.8 $SDRAM_OUT
+
+# Read capture is on the second internal edge after the chip's -- see above.
+set_multicycle_path -setup 2 -from [get_clocks {dram_clk}] -to [get_registers {*|sdram16:*|dq_in[*]}]
+set_multicycle_path -hold  1 -from [get_clocks {dram_clk}] -to [get_registers {*|sdram16:*|dq_in[*]}]
 
 # ==============================================================================
 # CPU multicycle.

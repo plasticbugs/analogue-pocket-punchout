@@ -820,7 +820,7 @@ module core_top
     wire clk_sys;       // Machine, renderer and SDRAM: 96.0 MHz
     wire clk_vid;       // Video: 24.0 MHz dot clock, exactly clk_sys / 4
     wire clk_vid_90deg; // Video: 24.0 MHz @ 90deg (Pocket RGB clock pair)
-    wire clk_unused0;
+    wire clk_sdram;     // SDRAM chip clock: 96.0 MHz, phase-shifted (see the SDC)
     wire clk_unused1;
 
     core_pll core_pll
@@ -831,7 +831,7 @@ module core_top
         .outclk_0 ( clk_sys       ),
         .outclk_1 ( clk_vid       ),
         .outclk_2 ( clk_vid_90deg ),
-        .outclk_3 ( clk_unused0   ),
+        .outclk_3 ( clk_sdram     ),
         .outclk_4 ( clk_unused1   ),
 
         .locked   ( pll_core_locked )
@@ -894,9 +894,19 @@ module core_top
     wire       dbg_line_overrun, dbg_dma_req, dbg_load_overflow;
     wire [11:0] dbg_worst_line;
 
+    //! Diagnostics, from the Interact menu on the modifier word alongside
+    //! the aspect bits: bit 3 shows the overlay, bit 4 flips the SDRAM read
+    //! capture to its alternate point (so a timing fault can be probed on the
+    //! panel without a rebuild).
+    wire po_ovl_en  = mod_sw0[3];
+    wire po_rd_late = ~mod_sw0[4];
+
     punchout_core po (
         .clk              ( clk_sys      ),
+        .clk_sdram        ( clk_sdram    ),
         .reset            ( po_reset     ),
+        .rd_late          ( po_rd_late   ),
+        .ovl_en           ( po_ovl_en    ),
         .dl_active        ( ioctl_download ),
         .dl_addr          ( dl_addr      ),
         .dl_data          ( dl_data      ),
@@ -929,7 +939,9 @@ module core_top
         .dbg_line_overrun ( dbg_line_overrun ),
         .dbg_worst_line   ( dbg_worst_line   ),
         .dbg_dma_req      ( dbg_dma_req      ),
-        .dbg_load_overflow( dbg_load_overflow )
+        .dbg_load_overflow( dbg_load_overflow ),
+        .dbg_rom_st       (              ),
+        .dbg_pat_st       (              )
     );
 
     //! Screen shape, from the Interact menu. Measured on the Time Pilot core:

@@ -5,7 +5,13 @@
 // store (covers the 832KB ROM image with room to spare).
 
 
-module sdram_model (
+// PHASE_LAG 1 models the chip clocked IN PHASE with the controller (its edge
+// just after ours): a command registered at edge N is sampled by the chip at
+// N+1, and CL2 read data is on the bus during [N+3, N+4), so the controller's
+// sample at N+4 is the good one. 0 is the old inverted-clock arrangement, data
+// during [N+2, N+3), which is what the hardware could no longer deliver at
+// 96 MHz.
+module sdram_model #(parameter PHASE_LAG = 1) (
     input  logic        clk,
     inout  wire  [15:0] dq,
     input  logic [12:0] a,
@@ -18,8 +24,8 @@ module sdram_model (
 
     logic [12:0] row_open;
     logic        row_active;   // protocol checking: is a row currently open?
-    logic [15:0] pipe_q1;
-    logic        pipe_v1;
+    logic [15:0] pipe_q1, pipe_q2;
+    logic        pipe_v1, pipe_v2;
 
     wire [3:0] cmd = {cs_n, ras_n, cas_n, we_n};
     localparam CMD_ACT = 4'b0011, CMD_READ = 4'b0101, CMD_WRIT = 4'b0100,
@@ -38,8 +44,10 @@ module sdram_model (
 
     always_ff @(posedge clk) begin
         // CL2: command on bus at N -> data driven during N+2
-        dq_out <= pipe_q1;
-        dq_oe  <= pipe_v1;
+        pipe_q2 <= pipe_q1;
+        pipe_v2 <= pipe_v1;
+        dq_out  <= PHASE_LAG ? pipe_q2 : pipe_q1;
+        dq_oe   <= PHASE_LAG ? pipe_v2 : pipe_v1;
         pipe_v1 <= 1'b0;
 
         case (cmd)

@@ -122,6 +122,16 @@ int main(int argc, char **argv) {
         }
     }
     printf("loaded %zu bytes, SDRAM verified; releasing the machine\n", rom.size());
+    // The core now runs its own SDRAM self-test before releasing the machine.
+    // Wait for it and report what the overlay would show.
+    {
+        long g = 0;
+        while (dut->dbg_pat_st != 1 && dut->dbg_pat_st != 2 && g++ < 20000000) tick();
+        printf("self-test: ROM readback %s, pattern %s\n",
+               dut->dbg_rom_st == 1 ? "PASS" : dut->dbg_rom_st == 2 ? "FAIL" : "not run",
+               dut->dbg_pat_st == 1 ? "PASS" : dut->dbg_pat_st == 2 ? "FAIL" : "not run");
+        if (dut->dbg_rom_st != 1 || dut->dbg_pat_st != 1) return 1;
+    }
 
     // ---- run, capturing the requested frames
     int frame = 0;

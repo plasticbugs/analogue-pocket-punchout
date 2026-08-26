@@ -331,6 +331,94 @@ asynchronous group, which **cuts** the clk_sys to clk_vid crossing rather than
 analysing it — and that crossing is the video output. Cutting it would let each
 build route it blind and make the picture depend on the fitter seed.
 
+## First hardware report: backgrounds perfect, sprites garbage
+
+The first bitstream ran on a Pocket. Game logic, music and every background
+tile were right; every sprite tile was garbage. Backgrounds come from block
+RAM and sprites from SDRAM, so the report named the subsystem and nothing more
+-- and the SDRAM path had passed every simulation. Two independent faults were
+found, both of a kind no behavioural model would show.
+
+### 1. The loader queued every byte four times
+
+The APF data loader holds its write strobe high for `DIO_HOLD` = 4 clocks, and
+the core's SDRAM write queue enqueued on level rather than on edge: four
+entries per byte. `data_loader.sv` says the bridge delivers a 32-bit word every
+~75 clocks of 74 MHz, so that was 16 entries per word arriving against about 8
+the SDRAM could retire in the same time. The 256-entry queue overflowed a few
+hundred bytes into the graphics and dropped everything after. Block RAM never
+noticed, because rewriting the same byte four times is harmless -- which is
+exactly why the backgrounds were perfect and the program ran.
+
+Verilator never saw it because both benches feed bytes with a one-clock strobe.
+Fixed by enqueuing on the strobe's rising edge, and the system bench now feeds
+at the loader's real cadence.
+
+### 2. The read capture had half the time it needed, and the SDC hid it
+
+`sdram16` came from the Xenophobe core, where it clocked the chip on an
+*inverted* copy of the 40 MHz system clock and captured read data on the first
+internal edge after the chip's. That gives the chip's access time half a
+period: 12.5 ns at 40 MHz, comfortable; **5.2 ns at 96 MHz**, against a
+datasheet tAC of 6.5 ns. It cannot work, and it did not.
+
+It passed timing because the SDC carried a `-setup 2` multicycle on the
+`dram_dq` inputs -- an exception that moved the checked edge a full period
+later than the RTL actually captured. Measured by deleting the exception and
+re-running STA on the same fit: **every `dram_dq` input missed by 7.5 ns**.
+That is the number the first build was hiding. The SNES Pocket core uses the
+same inverted-clock arrangement at 85.9 MHz with the pins left unconstrained
+and survives on the gap between datasheet maximum and typical silicon; ten
+more MHz took that away.
+
+The fix is geometry, derived from STA's own numbers on a real fit rather than
+assumed:
+
+| Term | Measured |
+|---|---|
+| clock network, PLL → `dram_clk` pin | 12.56 ns |
+| clock network, PLL → `dq_in` register | 7.9 ns |
+| `dram_dq` pin → `dq_in` | 2.84 ns |
+| chip tAC max + board | 7.0 ns |
+| chip tOH min | 2.5 ns |
+
+The chip is now clocked from a fourth PLL output, phase-shifted so its edge at
+the pin lands ~2.1 ns before the controller's internal edge; read data is
+captured one edge later than before (READ+4 at the pins); and the multicycle is
+back, but this time it is *the* relationship -- the pin's clock network is
+4.66 ns longer than the register's, so the physical capture spans two nominal
+periods and the analyser's default pairing checks an edge the data can never
+meet. `projects/punchout_pocket.sdc` walks through every transfer's setup and
+hold with those numbers. The behavioural SDRAM model gained a `PHASE_LAG`
+parameter so it presents data where an in-phase chip would; against it, the
+old capture point reads zeros -- the bench now reproduces the hardware failure
+-- and the new one reads correctly. Both regressions pass through the new path.
+
+### The overlay, and why the next report will be specific
+
+METHODOLOGY §4 says to add the diagnostic overlay before it is needed; it was
+needed before it existed. It is in now: eight squares in the bottom rows of the
+fight screen, behind **Diagnostics Overlay** in the Pocket menu:
+
+| Square | Meaning | Green | Red | Yellow |
+|---|---|---|---|---|
+| 0 | loader queue overflowed | never | yes | — |
+| 1 | a video line overran its row | never | yes | — |
+| 2 | the DMC asked for a DMA (unserviced) | never | yes | — |
+| 3 | SDRAM self-test: ROM readback matches the loader's checksum | pass | fail | running |
+| 4 | SDRAM self-test: pattern written and read back | pass | fail | running |
+| 5 | SDRAM read timing setting | normal | — | alternate |
+| 6 | SDRAM controller initialised | yes | — | no |
+| 7 | unused | — | — | grey |
+
+The two self-tests run with the machine held in reset after every load and
+reset, and again whenever **SDRAM Read Timing** is changed from the menu. They
+split the fault space: PATTERN never touches the loader, so PATTERN red means
+the chip cannot be read or written at this clock and phase whatever the loader
+did; ROM red with PATTERN green means the loader. The timing setting exists so
+the capture point can be flipped on the panel without a rebuild; its alternate
+is the old READ+3 and is expected to turn square 4 red.
+
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report
   worst-case cycles per line, not just pixel equality.

@@ -8,6 +8,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "po_ram.sv"]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "po_romload.sv"]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "sdram16.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "po_sdram_test.sv"]
 set_global_assignment -name VERILOG_FILE       [file join $::quartus(qip_path) "tv80s_cen.v"]
 
 # tv80 Z80 (MIT, https://github.com/hutch31/tv80)

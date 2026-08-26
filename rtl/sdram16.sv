@@ -26,13 +26,25 @@
 //------------------------------------------------------------------------------
 
 module sdram16 #(
-        // (64 ms / 8192 rows) = 7.8125 us between refreshes. 375 cycles at the
-        // 48 MHz this core clocks it at; the Xenophobe default of 312 was for
-        // 40 MHz and would be 20% out of spec here, so rows would lose charge.
-        parameter [13:0] CYCLES_PER_REFRESH = 14'd375
+        // (64 ms / 8192 rows) = 7.8125 us between refreshes: 750 cycles at
+        // the 96 MHz this core clocks it at. (An earlier value of 375 assumed
+        // 48 MHz and refreshed twice as often as needed -- harmless, but it
+        // cost bandwidth for nothing.)
+        parameter [13:0] CYCLES_PER_REFRESH = 14'd750
     ) (
         input             init,        // Reset to initialize RAM
-        input             clk,         // Clock ~100MHz
+        input             clk,         // Controller clock, 96 MHz
+        // SDRAM_CLK is made from this, not from clk. It is the same frequency
+        // from the same PLL, phase-shifted so that the chip's clock edge at
+        // its pin lands just after the controller's internal edge. That gives
+        // the chip's data a full period to arrive instead of half of one --
+        // see the read-capture note below and docs/verification.md.
+        input             clk_pin,
+        // 1: read data is captured one clock later than the Xenophobe-era
+        // controller did (READ+4 at the pins), which is where it lands with
+        // the chip clocked in phase. 0 is the old capture point, kept only as
+        // a diagnostic the Pocket menu can flip without a rebuild.
+        input             rd_late,
         // SDRAM signals
         inout  wire[15:0] SDRAM_DQ,    // 16 bit bidirectional data bus
         output reg [12:0] SDRAM_A,     // 13 bit multiplexed address bus
@@ -120,7 +132,8 @@ module sdram16 #(
         reg [2:0] bcol;
         reg       bphase;
         reg [2:0] bdelay;
-        reg [CAS_LATENCY:0] data_ready_delay;
+        reg [CAS_LATENCY+2:0] data_ready_delay;
+        reg [15:0] dq_in;
 
         reg  [7:0] new_data;
         reg        new_we;
@@ -139,10 +152,22 @@ module sdram16 #(
         command  <= CMD_NOP;
         refresh_count  <= refresh_count+1'b1;
 
-        data_ready_delay <= {1'b0, data_ready_delay[CAS_LATENCY:1]};
+        // DQ is sampled into dq_in every clock, unconditionally, so the
+        // register can live in the I/O cell right at the pin (an enable would
+        // keep it out). The pipeline below then decides which sample is the
+        // read data. Read capture: the chip samples our READ at its edge after
+        // ours, drives data CAS_LATENCY edges later, and that arrives here in
+        // time for the NEXT edge -- so with the in-phase clock the good sample
+        // is dq_in taken at READ+4, transferred at READ+5. The Xenophobe-era
+        // capture at READ+3 assumed the chip's edge sat half a period ahead,
+        // which left 5.2 ns at 96 MHz for a 6.5 ns access time: the timing
+        // analyser put that path at -7.5 ns once the exception hiding it was
+        // removed, and on the Pocket every sprite came out as garbage.
+        dq_in <= SDRAM_DQ;
+        data_ready_delay <= {1'b0, data_ready_delay[CAS_LATENCY+2:1]};
 
         if(data_ready_delay[0])
-            {ready, data}  <= {1'b1, SDRAM_DQ};
+            {ready, data}  <= {1'b1, dq_in};
 
         case(state)
             STATE_STARTUP: begin
@@ -280,12 +305,16 @@ module sdram16 #(
                     // its data: raising ready here released the WAITing
                     // CPU with the previous read's stale byte
                     ready    <= ~new_rd;
-                    state    <= STATE_IDLE_2;
+                    // IDLE_3, not IDLE_2: ACTIVE to the next ACTIVE must be at
+                    // least tRC, 63 ns on the Pocket's part. Through IDLE_2 the
+                    // write cycle was 6 clocks, 62.5 ns at 96 MHz.
+                    state    <= STATE_IDLE_3;
                 end
                 else begin
-                    command                       <= CMD_READ;
-                    data_ready_delay[CAS_LATENCY] <= 1;
-                    state                         <= STATE_IDLE_5;
+                    command <= CMD_READ;
+                    if (rd_late) data_ready_delay[CAS_LATENCY+2] <= 1;
+                    else         data_ready_delay[CAS_LATENCY+1] <= 1;
+                    state   <= STATE_IDLE_5;
                 end
             end
         endcase
@@ -321,7 +350,7 @@ module sdram16 #(
     end
 
 `ifdef VERILATOR
-    assign SDRAM_CLK = ~clk;   // sim: chip clocks on our negedge-equivalent
+    assign SDRAM_CLK = clk_pin;   // the model clocks itself; see sdram_model
 `else
     altddio_out #(
         .extend_oe_disable      ( "OFF"          ),
@@ -333,9 +362,12 @@ module sdram16 #(
         .power_up_high          ( "OFF"          ),
         .width                  ( 1              )
     ) sdramclk_ddr (
-        .datain_h               ( 1'b0           ),
-        .datain_l               ( 1'b1           ),
-        .outclock               ( clk            ),
+        // In phase with clk_pin (high first), not inverted as the original
+        // was: the phase is set at the PLL, where the timing analyser can see
+        // it, rather than by flipping the clock here where it cannot.
+        .datain_h               ( 1'b1           ),
+        .datain_l               ( 1'b0           ),
+        .outclock               ( clk_pin        ),
         .dataout                ( SDRAM_CLK      ),
         .aclr                   ( 1'b0           ),
         .aset                   ( 1'b0           ),
