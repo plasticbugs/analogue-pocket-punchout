@@ -5,39 +5,28 @@
 #
 # The Pocket BSP (platform/pocket/bsp/pocket/sys_constr.sdc) creates the APF
 # clocks; this file describes what is specific to this core.
-#
-# There is no external memory here at all -- the whole 53 KB romset lives in
-# block RAM -- so there are no SDRAM pin constraints to get right.
 # ==============================================================================
-
-# ==============================================================================
-# The two 6809s are clocked by E and Q rather than by clk_sys -- mc6809i has no
-# system clock input at all. Both are generated from clk_sys by a 32-count
-# divider, so declare them and keep them in the machine's clock group.
-# ==============================================================================
-create_generated_clock -name cpu_e -source [get_pins {ic|core_pll|core_pll_inst|altera_pll_i|general\[0\].gpll~PLL_OUTPUT_COUNTER|divclk}] \
-    -divide_by 32 [get_registers {*|tp84_main:u_main|cpu_e}]
-create_generated_clock -name cpu_q -source [get_pins {ic|core_pll|core_pll_inst|altera_pll_i|general\[0\].gpll~PLL_OUTPUT_COUNTER|divclk}] \
-    -divide_by 32 -phase 90 [get_registers {*|tp84_main:u_main|cpu_q}]
 
 # ==============================================================================
 # Clock groups
 #
-# core_pll general[0] = clk_sys       49.152 MHz (8x the dot clock)
-#          general[1] = clk_vid        6.144 MHz (dot clock)
-#          general[2] = clk_vid 90deg  6.144 MHz
-#          general[3], general[4]      unused
+# core_pll general[0] = clk_sys       96.0 MHz  machine, renderer, SDRAM
+#          general[1] = clk_vid       24.0 MHz  dot clock, exactly clk_sys / 4
+#          general[2] = clk_vid 90deg 24.0 MHz
+#          general[3], general[4]     unused
 #
-# clk_sys and the two pixel clocks stay in ONE group on purpose. The video
-# output is launched on clk_sys and sampled by the APF scaler on clk_vid; they
-# are integer-related outputs of the same PLL, so that crossing is synchronous
-# by construction and should be verified rather than cut. Cutting it would let
-# each build route it blind and make the picture depend on the fitter seed.
+# clk_sys and the two pixel clocks stay in ONE group on purpose. The renderer
+# emits a pixel every fourth clk_sys cycle and the APF scaler samples it on
+# clk_vid; they are integer-related outputs of the same PLL, so that crossing is
+# synchronous by construction and should be verified rather than cut. Cutting it
+# would let each build route it blind and make the picture depend on the fitter
+# seed.
 #
 # clk_74a, clk_74b, the bridge SPI clock and the audio PLL are genuinely
 # asynchronous to the machine. The one multi-bit bus that crosses into clk_74b
 # -- the audio sample -- is handed over with a toggle flag in core_top, so the
-# capture is always of a value that has been still for several cycles.
+# capture is always of a value that has been still for several cycles
+# (METHODOLOGY 5.4).
 # ==============================================================================
 set_clock_groups -asynchronous \
  -group { bridge_spiclk } \
@@ -47,62 +36,64 @@ set_clock_groups -asynchronous \
           ic|core_pll|core_pll_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk \
           ic|core_pll|core_pll_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk \
           ic|core_pll|core_pll_inst|altera_pll_i|general[3].gpll~PLL_OUTPUT_COUNTER|divclk \
-          ic|core_pll|core_pll_inst|altera_pll_i|general[4].gpll~PLL_OUTPUT_COUNTER|divclk \
-          cpu_e cpu_q } \
+          ic|core_pll|core_pll_inst|altera_pll_i|general[4].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|pocket_audio_mixer|audio_pll|mf_audio_pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|pocket_audio_mixer|audio_pll|mf_audio_pll_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk }
 
 # ==============================================================================
+# SDRAM
+#
+# sdram16 drives SDRAM_CLK from a DDIO cell fed by clk_sys, so the chip clocks
+# on the inverted edge and the controller has half a period of setup either way.
+# The generated clock has to be declared for the I/O paths to be analysed at
+# all; without it Quartus reports them as unconstrained and the fit is a guess.
+#
+# The board delays are the usual Pocket figures: short traces, one load.
+# ==============================================================================
+set SDRAM_CLK_PIN [get_ports {dram_clk}]
+create_generated_clock -name dram_clk_out -source \
+    [get_pins {ic|core_pll|core_pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}] \
+    -invert $SDRAM_CLK_PIN
+
+set_input_delay  -max -clock dram_clk_out 6.4 [get_ports {dram_dq[*]}]
+set_input_delay  -min -clock dram_clk_out 3.2 [get_ports {dram_dq[*]}]
+set_output_delay -max -clock dram_clk_out 1.5 [get_ports {dram_dq[*] dram_a[*] dram_ba[*] dram_dqm[*] dram_ras_n dram_cas_n dram_we_n dram_cke}]
+set_output_delay -min -clock dram_clk_out -0.8 [get_ports {dram_dq[*] dram_a[*] dram_ba[*] dram_dqm[*] dram_ras_n dram_cas_n dram_we_n dram_cke}]
+
+# The controller reads DQ one full clock after the CAS latency expires, so the
+# capture is a whole period away from the launch, not half.
+set_multicycle_path -setup 2 -from [get_ports {dram_dq[*]}] -to [get_registers {*|sdram16:*|data[*]}]
+set_multicycle_path -hold  1 -from [get_ports {dram_dq[*]}] -to [get_registers {*|sdram16:*|data[*]}]
+
+# ==============================================================================
 # CPU multicycle.
 #
-# The sound Z80 advances only on a clock enable, at worst every 13 clk_sys
-# cycles (a phase accumulator averaging 3.579545 MHz), so every
-# register-to-register path *inside* tv80_core has at least 13 clock periods to
-# settle and tv80's microcode decode is the widest combinational block in it.
+# Both CPUs advance only on a clock enable: the Z80 every 24 clk_sys cycles
+# (4.000 MHz) and the 6502 every ~54 (1.789772 MHz). So every
+# register-to-register path *inside* either core has at least 24 clock periods
+# to settle, and tv80's microcode decode and T65's are the widest combinational
+# blocks in the design.
 #
-# Deliberately scoped to paths that both start and end inside the CPU: the
-# address and data buses run to block RAM ports that are clocked every cycle,
-# and those must still meet single-cycle timing.
+# Deliberately scoped to paths that both start and end inside a CPU: the address
+# and data buses run to block RAM ports that are clocked every cycle, and those
+# must still meet single-cycle timing.
 #
-# 6 rather than 13: half the provable margin, which is plenty of relief and
-# leaves the constraint correct even if the enable generation is ever changed.
+# 8 rather than 24: a third of the provable margin, which is plenty of relief
+# and leaves the constraint correct even if the enable generation is changed.
 # ==============================================================================
-set_multicycle_path -setup 6 -from [get_registers {*|tv80_core:*|*}] -to [get_registers {*|tv80_core:*|*}]
-set_multicycle_path -hold  5 -from [get_registers {*|tv80_core:*|*}] -to [get_registers {*|tv80_core:*|*}]
-
-
+set_multicycle_path -setup 8 -from [get_registers {*|tv80_core:*|*}] -to [get_registers {*|tv80_core:*|*}]
+set_multicycle_path -hold  7 -from [get_registers {*|tv80_core:*|*}] -to [get_registers {*|tv80_core:*|*}]
+set_multicycle_path -setup 8 -from [get_registers {*|T65:*|*}] -to [get_registers {*|T65:*|*}]
+set_multicycle_path -hold  7 -from [get_registers {*|T65:*|*}] -to [get_registers {*|T65:*|*}]
 
 # ==============================================================================
-# clk_sys <-> E/Q multicycle.
+# Big-sprite geometry.
 #
-# E and Q are generated from clk_sys by a 32-count divider, so the timing
-# analyser pairs them at the tightest available edge -- one clk_sys period,
-# 20.3 ns -- for every path that crosses between the two domains. That is not
-# what the hardware does. A 6809 bus cycle is 32 clk_sys periods long:
-#
-#   * clk_sys -> E/Q is the registered read mux feeding the CPU's data bus. The
-#     address has been stable since the last E edge, so the value settles within
-#     a few clk_sys cycles and is then held until the CPU samples it 32 later.
-#   * E/Q -> clk_sys is the CPU's address and write data reaching the block RAM
-#     ports and the write strobe. The strobe fires at count 31, and the memories
-#     are only read back a full bus cycle later.
-#
-# 16 rather than 32: half the provable margin, which is ample relief and leaves
-# the constraint correct even if the divider is ever changed.
+# The frame-setup machine multiplies the 12-bit zoom by three constants and adds
+# 32-bit terms, once per frame during vertical blanking. It has 42 blank lines
+# -- about 94,000 clocks -- to produce an answer that is not read until the
+# first line of the next field, so the arithmetic does not need to close at
+# 96 MHz and should not drag the whole fit down trying to.
 # ==============================================================================
-# The brackets must be escaped. get_clocks matches with Tcl globbing, where
-# general[0] is a character class matching the single character "0" -- so the
-# unescaped pattern matches "general0..." and silently selects nothing. The
-# exceptions below were being dropped entirely, which is why two compiles gave
-# byte-identical slack.
-set CLKSYS {ic|core_pll|core_pll_inst|altera_pll_i|general\[0\].gpll~PLL_OUTPUT_COUNTER|divclk}
-
-set_multicycle_path -setup -end 16 -from [get_clocks $CLKSYS]      -to [get_clocks {cpu_e cpu_q}]
-set_multicycle_path -hold  -end 15 -from [get_clocks $CLKSYS]      -to [get_clocks {cpu_e cpu_q}]
-set_multicycle_path -setup -end 16 -from [get_clocks {cpu_e cpu_q}] -to [get_clocks $CLKSYS]
-set_multicycle_path -hold  -end 15 -from [get_clocks {cpu_e cpu_q}] -to [get_clocks $CLKSYS]
-# NOT relaxed: E-to-E paths are mc6809i's own internal logic, and those
-# registers advance on every falling edge of E. They have one E period, not
-# sixteen. An earlier version of this file relaxed them along with the
-# cross-domain paths, which is the sort of exception that simulates perfectly
-# and misbehaves only on silicon.
+set_multicycle_path -setup 4 -to [get_registers {*|punchout_video:*|startx1[*] *|punchout_video:*|starty1_init[*] *|punchout_video:*|startx2[*] *|punchout_video:*|starty2_init[*] *|punchout_video:*|incxx1[*] *|punchout_video:*|incyy1[*] *|punchout_video:*|incxx2[*]}]
+set_multicycle_path -hold  3 -to [get_registers {*|punchout_video:*|startx1[*] *|punchout_video:*|starty1_init[*] *|punchout_video:*|startx2[*] *|punchout_video:*|starty2_init[*] *|punchout_video:*|incxx1[*] *|punchout_video:*|incyy1[*] *|punchout_video:*|incxx2[*]}]

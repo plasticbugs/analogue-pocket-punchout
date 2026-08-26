@@ -1,0 +1,123 @@
+{
+  "interact": {
+    "magic": "APF_VER_1",
+    "variables": [
+      {
+        "name": "Reset Core",
+        "id": 0,
+        "type": "action",
+        "enabled": true,
+        "address": "0xF0000000",
+        "value": 1
+      },
+      {
+        "name": "Screen Shape",
+        "id": 30,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF2000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFFF9",
+        "options": [
+          { "name": "Arcade (square pixels)", "value": "0x00000000" },
+          { "name": "Fill Screen",            "value": "0x00000002" }
+        ]
+      },
+      {
+        "name": "Difficulty",
+        "id": 31,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF1000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFCFF",
+        "options": [
+          { "name": "Easy (factory)", "value": "0x00000000" },
+          { "name": "Medium",         "value": "0x00000100" },
+          { "name": "Hard",           "value": "0x00000200" },
+          { "name": "Hardest",        "value": "0x00000300" }
+        ]
+      },
+      {
+        "name": "Round Time",
+        "id": 32,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF1000000",
+        "defaultval": 0,
+        "mask": "0xFFFFF3FF",
+        "options": [
+          { "name": "Longest (factory)", "value": "0x00000000" },
+          { "name": "Long",              "value": "0x00000400" },
+          { "name": "Short",             "value": "0x00000800" },
+          { "name": "Shortest",          "value": "0x00000C00" }
+        ]
+      },
+      {
+        "name": "Demo Sounds",
+        "id": 33,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF1000000",
+        "defaultval": 0,
+        "mask": "0xFFFFEFFF",
+        "options": [
+          { "name": "On (factory)", "value": "0x00000000" },
+          { "name": "Off",          "value": "0x00001000" }
+        ]
+      },
+      {
+        "name": "Rematch At A Discount",
+        "id": 34,
+        "type": "check",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF1000000",
+        "defaultval": 0,
+        "mask": "0xFFFFDFFF",
+        "value": "0x00002000"
+      },
+      {
+        "name": "Free Play",
+        "id": 35,
+        "type": "check",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF1000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFFF0",
+        "value": "0x0000000F"
+      },
+      {
+        "name": "Copyright Notice",
+        "id": 36,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF1000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFF7F",
+        "options": [
+          { "name": "Nintendo (factory)",        "value": "0x00000000" },
+          { "name": "Nintendo of America Inc.",  "value": "0x00000080" }
+        ]
+      },
+      {
+        "name": "Service Mode",
+        "id": 37,
+        "type": "check",
+        "enabled": true,
+        "persist": false,
+        "address": "0xF1000000",
+        "defaultval": 0,
+        "mask": "0xFFFF7FFF",
+        "value": "0x00008000"
+      }
+    ],
+    "messages": []
+  }
+}

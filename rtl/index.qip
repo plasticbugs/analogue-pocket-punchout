@@ -1,0 +1,31 @@
+# ==============================================================================
+# Punch-Out!! core RTL
+# ==============================================================================
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "punchout_core.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "punchout_main.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "punchout_video.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "punchout_sound.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "po_ram.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "po_romload.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "sdram16.sv"]
+set_global_assignment -name VERILOG_FILE       [file join $::quartus(qip_path) "tv80s_cen.v"]
+
+# tv80 Z80 (MIT, https://github.com/hutch31/tv80)
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "../modules/cpu-tv80/tv80_core.v"]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "../modules/cpu-tv80/tv80_alu.v"]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "../modules/cpu-tv80/tv80_mcode.v"]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "../modules/cpu-tv80/tv80_reg.v"]
+
+# T65 6502 (BSD, Daniel Wallner / MikeJ; this copy from MiSTer's VIC20 core,
+# which carries no savestate bus). It is the 6502 half of the RP2A03.
+# VHDL, so Verilator cannot see it -- sim/t65_stub.sv stands in for linting and
+# the APU is tested on its own against a captured register-write trace.
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) "../modules/cpu-t65/T65_Pack.vhd"]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) "../modules/cpu-t65/T65_MCode.vhd"]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) "../modules/cpu-t65/T65_ALU.vhd"]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) "../modules/cpu-t65/T65.vhd"]
+
+# NES APU (GPLv3, Kitrinx, via MiSTer-devel/NES_MiSTer). The other half of the
+# RP2A03. The stub supplies the savestate framework it expects.
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "../modules/sound-apu/apu_savestate_stub.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "../modules/sound-apu/apu.sv"]

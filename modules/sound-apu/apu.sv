@@ -1,5 +1,11 @@
 // Rewritten 6/4/2020 by Kitrinx
 // This code is GPLv3.
+//
+// Vendored from MiSTer-devel/NES_MiSTer. The only change from upstream is the
+// import below: the savestate parameters it reads come from a package that
+// NES_MiSTer leaks into $unit, and this core provides a stub instead
+// (modules/sound-apu/apu_savestate_stub.sv).
+import regs_savestates::*;
 
 module LenCounterUnit (
 	input  logic       clk,

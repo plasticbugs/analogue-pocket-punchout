@@ -168,7 +168,33 @@ controller. A renderer fault and a memory fault look identical on screen.
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report
   worst-case cycles per line, not just pixel equality.
-* **Audio.** Nothing yet. The 2A03's tempo comes from its own crystal, so
-  METHODOLOGY §5.3 does not apply, but §5.4 does: the sample bus crossing into
-  `clk_74b` needs the toggle handshake.
+* **Audio against MAME.** The sound board is built and its rates are exact, but
+  nothing has been measured yet. What is already established:
+
+  * The 2A03's tempo comes from its own crystal, not from CPU throughput, so
+    METHODOLOGY §5.3 does not bite. The enable is a 32-bit phase accumulator off
+    the 96 MHz system clock, exact to under a part per million.
+  * §5.4 does apply and is handled: the sample crosses into `clk_74b` through a
+    toggle-flag handshake in `core_top.sv`, after being decimated to 48.000 kHz
+    (96 MHz / 2000) by a tick-aligned box average and two cascaded two-point
+    averages.
+  * The APU mixer is **unipolar** — its output is the sum of two positive lookup
+    tables — and the Pocket's audio path is two's complement, so a DC blocker
+    stands in for the board's coupling capacitor. Handing the raw value over
+    would put a large DC step through the filter chain. METHODOLOGY §5.1's
+    warning about signedness in the *harness* applies here in the RTL.
+
+  The bench to build is the one from METHODOLOGY §4: send the same sound command
+  in both, record with `-wavwrite`, and compare peak, RMS and per-band energy.
+
+* **No DMC sample playback — established statically.** The 8 KB sound ROM
+  contains no absolute reference to `$4010`, `$4012`, `$4013` or `$4014`, found
+  by scanning it for 3-byte opcodes with an operand in `4000-4017`. So the DMC
+  never requests a DMA and the sound CPU's bus is never stolen. This was checked
+  in the ROM rather than in MAME on purpose: MAME's RP2A03 services its own APU
+  registers internally, and a write tap on the audio CPU's program space sees
+  almost none of them — the first attempt reported 143 writes to `$4017` and
+  none at all to `$4002`, which is not a machine that plays music.
+  `dbg_dma_req` is brought out of the core in case the assumption is ever
+  wrong.
 * **VLM5030 speech.** Deferred to last, by decision.

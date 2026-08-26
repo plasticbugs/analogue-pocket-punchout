@@ -47,7 +47,7 @@ module core_top
          //! System Configuration Parameters
          //! ------------------------------------------------------------------------
          // Memory
-         parameter USE_SDRAM    = 0,       //! Enable SDRAM (the whole romset fits in block RAM)
+         parameter USE_SDRAM    = 1,       //! Enable SDRAM (272 KB of graphics will not fit in block RAM)
          parameter USE_SRAM     = 0,       //! Enable SRAM
          parameter USE_CRAM0    = 0,       //! Enable Cellular RAM #1
          parameter USE_CRAM1    = 0,       //! Enable Cellular RAM #2
@@ -817,11 +817,11 @@ module core_top
     //! Clocks
     //! ------------------------------------------------------------------------
     wire pll_core_locked, pll_core_locked_s;
-    wire clk_sys;       // Machine + SDRAM: 40.0 MHz
-    wire clk_vid;       // Video: 20.0 MHz (dot clock)
-    wire clk_vid_90deg; // Video: 20.0 MHz @ 90deg (Pocket RGB clock pair)
-    wire clk_ram;       // unused
-    wire clk_21m;       // unused
+    wire clk_sys;       // Machine, renderer and SDRAM: 96.0 MHz
+    wire clk_vid;       // Video: 24.0 MHz dot clock, exactly clk_sys / 4
+    wire clk_vid_90deg; // Video: 24.0 MHz @ 90deg (Pocket RGB clock pair)
+    wire clk_unused0;
+    wire clk_unused1;
 
     core_pll core_pll
     (
@@ -831,8 +831,8 @@ module core_top
         .outclk_0 ( clk_sys       ),
         .outclk_1 ( clk_vid       ),
         .outclk_2 ( clk_vid_90deg ),
-        .outclk_3 ( clk_ram       ),
-        .outclk_4 ( clk_21m       ),
+        .outclk_3 ( clk_unused0   ),
+        .outclk_4 ( clk_unused1   ),
 
         .locked   ( pll_core_locked )
     );
@@ -841,95 +841,97 @@ module core_top
     synch_3 sync_lck(pll_core_locked, pll_core_locked_s, clk_74a);
 
     //! ------------------------------------------------------------------------
-    //! @ Time Pilot '84 (Konami, 1984)
+    //! @ Punch-Out!! (Nintendo, 1984)
     //! ------------------------------------------------------------------------
     wire reset_sw_s;
     synch_3 sync_rst(reset_sw, reset_sw_s, clk_sys);
-    wire tp_reset = reset_sw_s | ioctl_download | ~pll_core_locked_s;
+    wire po_reset = reset_sw_s | ioctl_download | ~pll_core_locked_s;
 
-    //! ROM: a single slot holding the flat 99,584-byte image built by
-    //! tools/mra_build.py. tp84_core decodes the regions itself.
+    //! ROM: a single slot holding the flat 371,712-byte image built by
+    //! tools/mra_build.py. punchout_core decodes the regions itself and sends
+    //! the two big-sprite graphics ROMs and the speech data to SDRAM.
     wire        ioctl_isROM = ioctl_download && ioctl_index == 16'h0;
     wire        dl_we       = ioctl_isROM && ioctl_wr;
-    wire [17:0] dl_addr     = ioctl_addr[17:0];
+    wire [24:0] dl_addr     = ioctl_addr[24:0];
     wire  [7:0] dl_data     = ioctl_data;
 
-    //! Controls. Time Pilot '84 is an 8-way stick and TWO buttons per player.
+    //! Controls. A 4-way stick and three buttons, all read ACTIVE HIGH -- the
+    //! opposite of most boards, so nothing here is inverted.
     //!
-    //! SYSTEM: 0 coin1, 1 coin2, 2 service, 3 start1, 4 start2
-    //! P1/P2 : 0 left, 1 right, 2 up, 3 down, 4 button1, 5 button2
-    //! All active low.
+    //!   IN0: d0 left punch, d2 right punch, d3 KO punch
+    //!   IN1: d0 right, d1 left, d2 up, d3 down, d6 service, d7 coin
     //!
-    //! 2 player start needs a button of its own: the platform's m_start2 comes
-    //! from a SECOND physical controller, which a handheld does not have.
-    wire [7:0] tp_system = ~{ 3'b000,
-                              m_start2 | m_btn1,
-                              m_start1,
-                              svc_sw,
-                              m_coin2,
-                              m_coin1 };
+    //! There is no start button on this machine: a coin begins play, so both
+    //! Select and Start are wired to the coin slot.
+    //!
+    //! B and A are the two punches with Y for the KO, and the shoulders mirror
+    //! them, so a player can throw left and right from either hand position.
+    wire [7:0] po_in0 = { 4'b0000,
+                          m_btn3 | m_btn6,     // Y or X  -> KO punch
+                          m_btn2 | m_btn5,     // A or R  -> right punch
+                          1'b0,
+                          m_btn1 | m_btn4 };   // B or L  -> left punch
 
-    wire [7:0] tp_p1 = ~{ 2'b00,
-                          m_btn3,                  // A -> button 2 (missile)
-                          m_btn2,                  // B -> button 1 (fire)
-                          m_down, m_up, m_right, m_left };
-
-    //! Player 2's controls mirrored onto the same pad, so the console can be
-    //! handed over between turns. In upright mode -- the default -- the game
-    //! reads P1 for both players anyway; this also makes cocktail playable on
-    //! one pad, with the picture inverted on P2's turn as the cabinet does it.
-    wire [7:0] tp_p2 = tp_p1;
+    wire [7:0] po_in1 = { m_coin1 | m_start1,  // Select or Start -> coin
+                          svc_sw,
+                          2'b00,
+                          m_down, m_up, m_left, m_right };
 
     //! DIP switches, XORed onto the factory defaults so 0 always means
     //! "as the machine shipped".
-    //!   DSW1 (SW1) 0xFF = 1 coin 1 credit on both slots
-    //!   DSW2 (SW2) 0x32 = 3 lives, upright, 20k/60k, hard, demo sounds on
-    wire [7:0] tp_dsw1 = 8'hff ^ dip_sw0;
-    wire [7:0] tp_dsw2 = 8'h32 ^ dip_sw1;
+    //!   DSW1 0x00 = 1 coin 1 credit, copyright "Nintendo"
+    //!   DSW2 0x10 = easy, longest time, demo sounds on
+    //! DSW1 bit 4 is not a switch -- it is the speech chip's busy line -- so it
+    //! is masked out of whatever the menu offers.
+    wire [7:0] po_dsw1 = (8'h00 ^ dip_sw0) & 8'hef;
+    wire [7:0] po_dsw2 =  8'h10 ^ dip_sw1;
 
     //! The machine
-    wire [7:0] tp_r, tp_g, tp_b;
-    wire       tp_hs, tp_vs, tp_hb, tp_vb, tp_de, tp_ce_pix;
-    wire signed [15:0] tp_audio;
-    wire       tp_audio_ce;
-    wire       dbg_spr_overrun, dbg_watchdog;
+    wire [7:0] po_r, po_g, po_b;
+    wire       po_hs, po_vs, po_de, po_ce_pix;
+    wire signed [15:0] po_audio;
+    wire       po_audio_ce;
+    wire       dbg_line_overrun, dbg_dma_req;
+    wire [11:0] dbg_worst_line;
 
-    tp84_core tp (
+    punchout_core po (
         .clk              ( clk_sys      ),
-        .reset            ( tp_reset     ),
-        .pause            ( pause_core   ),
-        .in_system        ( tp_system    ),
-        .in_p1            ( tp_p1        ),
-        .in_p2            ( tp_p2        ),
-        .dsw1             ( tp_dsw1      ),
-        .dsw2             ( tp_dsw2      ),
+        .reset            ( po_reset     ),
+        .dl_active        ( ioctl_download ),
         .dl_addr          ( dl_addr      ),
         .dl_data          ( dl_data      ),
         .dl_we            ( dl_we        ),
-        .red              ( tp_r         ),
-        .green            ( tp_g         ),
-        .blue             ( tp_b         ),
-        .hsync            ( tp_hs        ),
-        .vsync            ( tp_vs        ),
-        .hblank           ( tp_hb        ),
-        .vblank           ( tp_vb        ),
-        .de               ( tp_de        ),
-        .ce_pix           ( tp_ce_pix    ),
-        .vblank_rise      (              ),
-        .audio            ( tp_audio     ),
-        .audio_ce         ( tp_audio_ce  ),
-        .dbg_spr_overrun  ( dbg_spr_overrun ),
-        .dbg_watchdog     ( dbg_watchdog ),
-        .dbg_pc_main      (              ),
-        .dbg_pc_sub       (              ),
-        .dbg_palette_bank (              ),
-        .dbg_scroll_x     (              ),
-        .dbg_scroll_y     (              ),
-        .dbg_flip         (              ),
-        .dbg_snd_timer    (              ),
-        .dbg_snd_filter   (              ),
-        .dbg_sn_writes    (              ),
-        .dbg_snd_irqs     (              )
+        .in0              ( po_in0       ),
+        .in1              ( po_in1       ),
+        .dsw1             ( po_dsw1      ),
+        .dsw2             ( po_dsw2      ),
+        .ce_pix           ( po_ce_pix    ),
+        .hsync            ( po_hs        ),
+        .vsync            ( po_vs        ),
+        .de               ( po_de        ),
+        .vid_r            ( po_r         ),
+        .vid_g            ( po_g         ),
+        .vid_b            ( po_b         ),
+        .audio            ( po_audio     ),
+        .audio_ce         ( po_audio_ce  ),
+        .nv_addr          ( 25'd0        ),
+        .nv_q             (              ),
+        .nv_d             ( 8'd0         ),
+        .nv_we            ( 1'b0         ),
+        .dram_dq          ( dram_dq      ),
+        .dram_a           ( dram_a       ),
+        .dram_ba          ( dram_ba      ),
+        .dram_dqm_l       ( dram_dqm[0]  ),
+        .dram_dqm_h       ( dram_dqm[1]  ),
+        .dram_cs_n        (              ),
+        .dram_ras_n       ( dram_ras_n   ),
+        .dram_cas_n       ( dram_cas_n   ),
+        .dram_we_n        ( dram_we_n    ),
+        .dram_cke         ( dram_cke     ),
+        .dram_clk         ( dram_clk     ),
+        .dbg_line_overrun ( dbg_line_overrun ),
+        .dbg_worst_line   ( dbg_worst_line   ),
+        .dbg_dma_req      ( dbg_dma_req      )
     );
 
     //! Screen shape, from the Interact menu. Measured on the Time Pilot core:
@@ -940,14 +942,16 @@ module core_top
     assign video_preset = (aspect_sel == 2'd1) ? 3'd1 : 3'd0;
 
     //! ------------------------------------------------------------------
-    //! Video: the core already emits one pixel per clk_vid tick, so this is
-    //! just a retiming register onto the video clock (same PLL, STA-timed).
+    //! Video: the renderer runs at 96 MHz and emits one pixel every fourth
+    //! clock, which is exactly clk_vid. Both come from the same PLL, so this is
+    //! a retiming register onto the video clock rather than a crossing, and it
+    //! stays in one clock group in the SDC so the fitter has to prove it.
     //! ------------------------------------------------------------------
     reg [7:0] vr_q, vg_q, vb_q;
     reg       vhs_q, vvs_q, vde_q;
     always @(posedge clk_vid) begin
-        vr_q  <= tp_r;  vg_q <= tp_g;  vb_q <= tp_b;
-        vhs_q <= tp_hs; vvs_q <= tp_vs; vde_q <= tp_de;
+        vr_q  <= po_r;  vg_q <= po_g;  vb_q <= po_b;
+        vhs_q <= po_hs; vvs_q <= po_vs; vde_q <= po_de;
     end
     assign core_r  = vr_q;
     assign core_g  = vg_q;
@@ -972,9 +976,10 @@ module core_top
     //! ------------------------------------------------------------------
     //! Decimate before the handover, not just sample.
     //!
-    //! The sound board updates at 894.9 kHz -- 18.6x the 48 kHz the sample is
-    //! handed over at -- and three SN76489As put a lot of energy well above
-    //! 24 kHz. Point-sampling that folds all of it back into the audible band.
+    //! The sound board updates at 1.7898 MHz -- 37.3x the 48 kHz the sample is
+    //! handed over at -- and the APU's square and noise channels put a lot of
+    //! energy well above 24 kHz. Point-sampling that folds all of it back into
+    //! the audible band.
     //!
     //! Average exactly the samples that fall between two 48 kHz ticks, then
     //! take a two-point average of the result. An earlier attempt averaged a
@@ -994,39 +999,43 @@ module core_top
     //! band-limiting that step is what stops it arriving as a click.
     logic signed [15:0] snd_hold = 16'sd0;
     logic               snd_tog  = 1'b0;
-    logic        [9:0]  snd_div  = 10'd0;
+    logic       [10:0]  snd_div  = 11'd0;
 
     logic signed [21:0] snd_acc   = 22'sd0;
-    logic        [4:0]  snd_cnt   = 5'd0;
+    logic        [5:0]  snd_cnt   = 6'd0;
     logic signed [15:0] snd_avg    = 16'sd0;
     logic signed [15:0] snd_avg_d  = 16'sd0;
     logic signed [15:0] snd_avg_d2 = 16'sd0;
 
-    wire signed [21:0] snd_s = {{6{tp_audio[15]}}, tp_audio};
-    //! 65536/n for the sample counts this rate ratio can produce.
-    wire [12:0] snd_rcp = (snd_cnt == 5'd17) ? 13'd3855 :
-                          (snd_cnt == 5'd18) ? 13'd3641 :
-                          (snd_cnt == 5'd19) ? 13'd3449 :
-                          (snd_cnt == 5'd20) ? 13'd3277 : 13'd3449;
+    wire signed [21:0] snd_s = {{6{po_audio[15]}}, po_audio};
+    //! 65536/n for the sample counts this rate ratio can produce. The 2A03
+    //! updates at 1.789772 MHz and the handover runs at 48.000 kHz exactly
+    //! (96 MHz / 2000), so a tick collects 37 or 38 samples; the neighbours are
+    //! there so a boundary case cannot divide by the wrong number.
+    wire [12:0] snd_rcp = (snd_cnt == 6'd36) ? 13'd1820 :
+                          (snd_cnt == 6'd37) ? 13'd1771 :
+                          (snd_cnt == 6'd38) ? 13'd1725 :
+                          (snd_cnt == 6'd39) ? 13'd1680 : 13'd1771;
     wire signed [34:0] snd_prod = snd_acc * $signed({1'b0, snd_rcp});
     wire signed [18:0] snd_quot = snd_prod[34:16];
     wire signed [15:0] snd_clip = (snd_quot >  19'sh0_7fff) ? 16'sh7fff :
                                   (snd_quot < -19'sh0_8000) ? 16'sh8000 :
                                   snd_quot[15:0];
 
-    wire snd_tick = (snd_div == 10'd1023);
+    //! 96 MHz / 2000 = 48.000 kHz exactly.
+    wire snd_tick = (snd_div == 11'd1999);
 
     always_ff @(posedge clk_sys) begin
         if (snd_tick) begin
-            snd_avg    <= (snd_cnt == 5'd0) ? snd_avg : snd_clip;
+            snd_avg    <= (snd_cnt == 6'd0) ? snd_avg : snd_clip;
             snd_avg_d  <= snd_avg;
             snd_avg_d2 <= snd_avg_d;
-            snd_acc   <= tp_audio_ce ? snd_s : 22'sd0;
-            snd_cnt   <= tp_audio_ce ? 5'd1 : 5'd0;
+            snd_acc   <= po_audio_ce ? snd_s : 22'sd0;
+            snd_cnt   <= po_audio_ce ? 6'd1 : 6'd0;
         end
-        else if (tp_audio_ce) begin
+        else if (po_audio_ce) begin
             snd_acc <= snd_acc + snd_s;
-            snd_cnt <= snd_cnt + 5'd1;
+            snd_cnt <= snd_cnt + 6'd1;
         end
     end
 
@@ -1047,7 +1056,7 @@ module core_top
     always_ff @(posedge clk_sys) begin
         snd_div <= snd_div + 1'd1;
         if (snd_tick) begin
-            snd_div  <= 10'd0;
+            snd_div  <= 11'd0;
             snd_hold <= (snd_q4 >  17'sh0_7fff) ? 16'sh7fff :
                         (snd_q4 < -17'sh0_8000) ? 16'sh8000 : snd_q4[15:0];
             snd_tog  <= ~snd_tog;

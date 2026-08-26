@@ -76,9 +76,12 @@ set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_RO
 set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 # ==============================================================================
-# No SDRAM: the whole 53 KB romset lives in block RAM, so there are no
-# external memory pins to constrain.
+# SDRAM. 272 KB of graphics and speech data do not fit in block RAM, so the
+# external memory is in use and its pins need real I/O constraints.
 # ==============================================================================
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_*
+set_instance_assignment -name FAST_INPUT_REGISTER  ON -to dram_dq[*]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[*]
 
 set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:../platform/pocket/scripts/pre_flow.tcl"
 set_global_assignment -name POST_FLOW_SCRIPT_FILE "quartus_sh:../platform/pocket/scripts/post_flow.tcl"
@@ -840,5 +843,3 @@ set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_we_n
 # This is a hardware-only fault by construction: a simulator has no routing
 # delay, so no amount of Verilator will show it.
 # ==============================================================================
-set_instance_assignment -name GLOBAL_SIGNAL "GLOBAL CLOCK" -to "core_top:ic|tp84_core:tp|tp84_main:u_main|cpu_e"
-set_instance_assignment -name GLOBAL_SIGNAL "GLOBAL CLOCK" -to "core_top:ic|tp84_core:tp|tp84_main:u_main|cpu_q"
