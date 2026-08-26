@@ -92,7 +92,7 @@
             "value": "0x00000200"
           },
           {
-            "name": "3: addr hi, PROM R, top / G, B",
+            "name": "3: cell via CPU port: code / attr",
             "value": "0x00000300"
           }
         ]

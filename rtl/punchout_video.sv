@@ -101,6 +101,12 @@ module punchout_video (
     //!      bit 0: the background pass reads the LIVE tilemap RAMs and the
     //!             snapshot copier is stopped   bit 1: no sprite passes
     input  wire   [1:0] rtest,
+    //! ---- while the CPUs are frozen, the CPU's own port of the live tilemap
+    //!      RAMs is borrowed to read the cell under the crosshair, so a wrong
+    //!      byte can be told apart as wrong CONTENT (both ports agree) or a
+    //!      wrong READ on the renderer's port (they differ)
+    input  wire         hijack,
+    output wire  [15:0] porta_rec,        // {code via port A, attr via port A} of that cell
     input  wire   [3:0] cur_move,         // {down, up, left, right}, sampled once per frame
     input  wire         cur_fast,         // move 8 instead of 1
     output logic        dbg_f_black,
@@ -286,20 +292,30 @@ module punchout_video (
     logic [7:0] s1_l [0:3];
     logic [7:0] s2_l [0:3];
 
+    logic [80:0] probe_lat;   // the inspector's record (assigned at the probe);
+                              // exactly the width of the record: a wider
+                              // register zero-extends it and shifts every field
+    // port A address: the CPU, or under hijack the crosshair cell's map index
+    wire [10:0] pa_idx  = probe_lat[62:52];          // the record's tilemap index
+    wire [10:0] pa_bot  = hijack ? pa_idx       : cpu_vaddr[11:1];
+    wire  [9:0] pa_top  = hijack ? pa_idx[9:0]  : cpu_vaddr[10:1];
+    wire        pa_we   = cpu_vwe && !hijack;
+    assign porta_rec = probe_lat[1] ? {bgt_q0, bgt_q1} : {bgb_q0, bgb_q1};
+
     po_dpram #(.AW(10), .DW(8)) u_bgt0 (.clk(clk),
-        .a_addr(cpu_vaddr[10:1]), .a_we(cpu_vwe && vsel_top && !cpu_vaddr[0]),
+        .a_addr(pa_top), .a_we(pa_we && vsel_top && !cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgt_q0),
         .b_addr(rtest[0] ? bgt_ridx : cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_l0));
     po_dpram #(.AW(10), .DW(8)) u_bgt1 (.clk(clk),
-        .a_addr(cpu_vaddr[10:1]), .a_we(cpu_vwe && vsel_top &&  cpu_vaddr[0]),
+        .a_addr(pa_top), .a_we(pa_we && vsel_top &&  cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgt_q1),
         .b_addr(rtest[0] ? bgt_ridx : cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(bgt_l1));
     po_dpram #(.AW(11), .DW(8)) u_bgb0 (.clk(clk),
-        .a_addr(cpu_vaddr[11:1]), .a_we(cpu_vwe && vsel_bot && !cpu_vaddr[0]),
+        .a_addr(pa_bot), .a_we(pa_we && vsel_bot && !cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgb_q0),
         .b_addr(rtest[0] ? bgb_ridx : cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l0));
     po_dpram #(.AW(11), .DW(8)) u_bgb1 (.clk(clk),
-        .a_addr(cpu_vaddr[11:1]), .a_we(cpu_vwe && vsel_bot &&  cpu_vaddr[0]),
+        .a_addr(pa_bot), .a_we(pa_we && vsel_bot &&  cpu_vaddr[0]),
         .a_d(cpu_vdin), .a_q(bgb_q1),
         .b_addr(rtest[0] ? bgb_ridx : cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l1));
 
@@ -996,8 +1012,6 @@ module punchout_video (
                   && (dl_y >= PROBE_Y0) && (dl_y <= PROBE_Y1) && (dl_x < PROBE_X1)
                   && (pr4 == 4'hf) && (pg4 == 4'hf) && (pb4 == 4'hf);
     logic        probe_valid;
-    logic [80:0] probe_lat;   // exactly the width of the record below: a wider
-                              // register zero-extends it and shifts every field
     // the crosshair, in raster coordinates (act_x 0..511, act_y 0..671)
     logic  [8:0] cur_x;
     logic  [9:0] cur_y;

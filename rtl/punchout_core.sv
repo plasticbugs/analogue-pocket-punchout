@@ -231,6 +231,8 @@ module punchout_core (
     //      0 grey = not applicable, 1 green = good, 2 red = bad, 3 yellow = busy
     function automatic [1:0] rg(input bad); rg = bad ? 2'd2 : 2'd1; endfunction
     wire [81:0] probe_rec;
+    wire [15:0] porta_rec;
+    wire        cpu_hold;         // assigned with the sticky faults below
     wire [31:0] probe_cnt;
     wire  [7:0] probe_wr_bot, probe_wr_top;
     wire        pv = probe_rec[81];
@@ -251,21 +253,16 @@ module punchout_core (
             //   0  upper: palette index      lower: writer, attribute bits 1-7
             //   1  upper: x (fight, or info) lower: line (fight, or info)
             //   2  upper: code byte          lower: tilemap index bits 7-0
-            //   3  upper: tilemap index bits 10-8, PROM R nibble (bit 0
-            //      first), top-monitor flag   lower: PROM G nibble, B nibble
+            //   3  the same cell read through the CPU's port of the live RAM
+            //      (only while frozen): upper code byte, lower attribute byte
             2'd0: begin pg_hi = pbyte(pv, probe_rec[51:44]);
                         pg_lo = { pb(pv, probe_rec[78]), pb(pv, probe_rec[77]), pb(pv, probe_rec[76]),
                                   pb(pv, probe_rec[75]), pb(pv, probe_rec[74]), pb(pv, probe_rec[73]),
                                   pb(pv, probe_rec[72]), wr_sq }; end
             2'd1: begin pg_hi = pbyte(pv, probe_rec[43:36]); pg_lo = pbyte(pv, probe_rec[35:28]); end
             2'd2: begin pg_hi = pbyte(pv, probe_rec[70:63]); pg_lo = pbyte(pv, probe_rec[59:52]); end
-            default: begin pg_hi = { pb(pv, probe_rec[1]),
-                                     pb(pv, probe_rec[27]), pb(pv, probe_rec[26]), pb(pv, probe_rec[25]), pb(pv, probe_rec[24]),
-                                     pb(pv, probe_rec[62]), pb(pv, probe_rec[61]), pb(pv, probe_rec[60]) };
-                           pg_lo = pbyte(pv, { probe_rec[16], probe_rec[17], probe_rec[18], probe_rec[19],
-                                               probe_rec[20], probe_rec[21], probe_rec[22], probe_rec[23] }); end
-            // (nibbles are shown bit 0 first, like everything else: PROM R is
-            //  rec[27:24] with bit 0 at rec[24]; G rec[23:20], B rec[19:16])
+            default: begin pg_hi = pbyte(pv && cpu_hold, porta_rec[15:8]);
+                           pg_lo = pbyte(pv && cpu_hold, porta_rec[7:0]); end
         endcase
     end
     wire [15:0] ovl_stat2 = pg_hi;
@@ -323,6 +320,7 @@ module punchout_core (
         .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall),
         .probe_clr(ovl_mode != ovl_mode_d), .vid_mode(vid_mode), .dbg_f_black(f_black),
         .cur_move(cur_move), .cur_fast(cur_fast), .rtest(rtest),
+        .hijack(cpu_hold && ovl_mode == 2'd3), .porta_rec(porta_rec),
         .probe_rec(probe_rec), .probe_cnt(probe_cnt),
         .probe_wr_bot(probe_wr_bot), .probe_wr_top(probe_wr_top));
 
@@ -344,7 +342,7 @@ module punchout_core (
     // from the frozen state: if the fault is in the render path it stays
     // visible, if it needed the CPUs moving it goes away -- either answer is
     // information.
-    wire cpu_hold = freeze || ((ovl_mode == 2'd2 || ovl_mode == 2'd3) && (|sticky));
+    assign cpu_hold = freeze || ((ovl_mode == 2'd2 || ovl_mode == 2'd3) && (|sticky));
 
     // =========================================================================
     // Main board

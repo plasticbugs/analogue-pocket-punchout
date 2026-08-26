@@ -593,9 +593,9 @@ index, bit 0 at the left, red for 1. All grey until a hit. That is page 0 of
 **Probe Page**, all of the pixel under the crosshair; page 1 is its x
 (upper; on the info screen, info x = 2 x value - 128) and line (lower); page
 2 the tile code byte the pass fetched (upper) and bits 7-0 of the tilemap
-address it read (lower); page 3 upper is that address's bits 10-8, the PROM
-R nibble bit 0 first, and the top-monitor flag; lower the PROM G and B
-nibbles. A black pixel through the PROMs is nibbles F, F, F.
+address it read (lower); page 3, only while the CPUs are frozen, is the same
+cell read through the CPU's port of the live RAM: code byte (upper) and
+attribute byte (lower).
 **Video Path** offers the palette (normal), the raw index (R from bits 7-5, G
 from 4-2, B from 1-0: the canvas is blue), the writer tag (green background,
 red sprite 1, yellow sprite 2) and index 7 in white with the rest raw.
@@ -700,6 +700,29 @@ are from ordinary pixels. Spots A and B also put column 22 at x 44, i.e. a
 row scroll of 133 rather than MAME's 191 at the equivalent moment; the game
 does move the scroll during a fight, so that may simply be the state the
 Pocket's game was in, and the crosshair on a ring post will say.)
+
+**Sixth round** (build 7e3e11c, Render Test): sprites off -- the bar spans
+nearly the whole canvas width, so it is the full rows and is normally hidden
+behind the opponent; background from live RAM with the copier stopped -- the
+bar is still there, so the snapshot copier and shadow RAMs are exonerated:
+the wrong attribute comes out of the CPU's own tilemap RAM. Both tests on --
+no bar, VS still blinking; but stopping the copier also stops the row-scroll
+latch, so the ring showed a stale scroll and the bad columns were simply out
+of view. The bar is **locked to the canvas and scrolls with it**: a fixed
+set of cells, rows 20-22 from the canvas's left edge rightward. When fully
+exposed it carries the bottom halves of two **red digits** at its top-left.
+Attribute 0x2C is colour 11 -- black, black, red, black -- the credit
+screen's text colour, which the game writes in bulk at the wipe. And the
+"scratch row" is the Z80's stack: bytes 0xFFDE-0xFFFF, the tail of this
+RAM, pushed to every frame. The ring post read at x 5 is at map column 17,
+where MAME's is column 54 at the equivalent moment.
+
+Black cells with red digits in the ring is what stale or misdirected
+*writes* look like, not a read error -- but the write counters saw none by
+intended address, and the cells change state while the CPUs are frozen.
+The seventh build reads the crosshair cell through **both ports** of the
+live RAM -- the renderer's and, while frozen, the CPU's -- which tells wrong
+content from a wrong read directly.
 
 The first probe tested the palette index for 0-3 (colour 0). It fired on the
 credit screen's black tiles, as it should, and **not on the bar** -- so the
