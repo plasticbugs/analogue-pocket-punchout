@@ -451,7 +451,7 @@ with, so sprites were garbage -- in the first build regardless of the capture
 timing, which was a real fault of its own but not the one on screen.
 
 Faults 1 and 2 above were real and are fixed, but this is the one that was
-showing. The lesson is about the benches: they stop at `punchout_core`, so a
+showing -- half of it: see 4. The lesson is about the benches: they stop at `punchout_core`, so a
 single line of glue in `core_top` sat outside every one of them. The core now
 owns its own reset during a load; `core_top`'s reset is just the menu action
 and the PLL lock.
@@ -460,6 +460,25 @@ On the alternate capture point staying green: this chip at room temperature
 beats its datasheet access time by enough that the old, marginal capture
 happens to work. That is the datasheet-versus-typical gap the SNES core lives
 on; the normal setting is the one with analysed margin.
+
+### 4. ...and the host's own reset held it there too
+
+Third report, after fault 3 was fixed: identical -- 0, 4, 6 green, 3 red,
+sprites unchanged. `reset_sw` from the platform's `interact` module is
+`~(reset_n && core_reset_s)`: the menu action **and** the APF host's `reset_n`,
+which the platform header describes as "driven by host commands, can be used as
+core-wide reset". The Pocket's boot sequence holds that line low for the whole
+data-slot download and releases it afterwards. Removing `ioctl_download` from
+the reset equation had changed nothing on the panel, because the same reset
+arrived by a second path for exactly the same interval.
+
+`punchout_core` now takes two resets: `hw_reset`, the PLL not being locked,
+which resets everything; and `reset`, from host or menu, which stops the
+machine and touches nothing on the load path -- queue, SDRAM controller,
+checksum, self-test. The system bench holds `reset` asserted through the
+entire download and releases it after, as the host does. Both benches had been
+feeding a clean burst with reset low, which is why a fault that took every
+sprite twice over never once showed in simulation; it will now.
 
 ### The overlay, and why the next report will be specific
 
