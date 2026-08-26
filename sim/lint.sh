@@ -4,6 +4,18 @@
 # push costs a whole CI cycle.
 set -e
 cd "$(dirname "$0")/.."
+
+# The waiver names below (WIDTHEXPAND, UNUSEDSIGNAL, IMPLICITSTATIC ...) only
+# exist from Verilator 5, and an unknown -Wno- name is an error, not a warning.
+# Say so plainly rather than failing with something that looks like an RTL fault.
+ver=$(verilator --version 2>/dev/null | sed -E 's/^Verilator ([0-9]+).*/\1/')
+if [ -z "$ver" ]; then
+    echo "verilator not found"; exit 2
+fi
+if [ "$ver" -lt 5 ]; then
+    echo "Verilator $ver is too old; this needs 5.x for the warning names used here"
+    exit 2
+fi
 FLAGS="-Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-VARHIDDEN -Wno-PROCASSINIT
        -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CASEINCOMPLETE -Wno-UNSIGNED
        -Wno-PINCONNECTEMPTY -Wno-IMPLICITSTATIC
