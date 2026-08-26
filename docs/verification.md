@@ -536,6 +536,17 @@ question should have been *what content is this* -- the tile codes named the
 fighter introduction and MAME's write log dated it, in minutes; (4) an
 unimplemented input is a divergence even when it is silent.
 
+**A second symptom appeared with the fix, and was a different thing:** the
+red K.O. box at the top-left of the fight screen flickered and shifted a few
+pixels left for a frame whenever a punch landed, in attract mode too, where
+there is no speech at all. The bench's write log with raster rows showed the
+game's K.O.-meter redraw writing the scroll bytes of rows 2-3 **20 rows
+after NMI** and the tiles **75-139 rows after** -- and the snapshot at row 17
+is 39 rows after an NMI at row 692: one frame with the new scroll and the old
+tiles. The board gives the game 2.1 ms after NMI before its beam returns;
+this raster gave it 0.9. NMI now fires at row 520, 4.9 ms before the
+snapshot (`docs/hardware.md`, "NMI phase").
+
 #### The investigation as it happened
 
 With the game playing, one artefact: after a knock-down, as the opponent zooms

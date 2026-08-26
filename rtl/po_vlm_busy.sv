@@ -28,7 +28,7 @@ module po_vlm_busy (
     input  wire        st,              // chip ST pin  (LS259 bit 5)
     input  wire        vcu,             // chip VCU pin (LS259 bit 6)
     input  wire  [7:0] data,            // the byte latched at port 4
-    output logic       busy
+    output logic       busy /* verilator public_flat_rd */
 );
     `include "po_vlm_phrases.svh"
 
@@ -57,6 +57,7 @@ module po_vlm_busy (
     end
 
     logic        rst_d, st_d;
+    logic  [7:0] dbg_phrase /* verilator public_flat_rd */;   // the last table byte started
     logic [23:0] remain;            // samples of BUSY left
     logic [11:0] frames;            // the phrase's frame count
     logic [23:0] samples_total;
@@ -84,6 +85,7 @@ module po_vlm_busy (
             if (!st_d && st) begin
                 busy   <= 1'b1;
                 frames <= (vcu || data[0]) ? 12'd0 : VLM_FRAMES[data[7:1]];
+                dbg_phrase <= data;
                 remain <= '0;
             end
             // ST high -> low: speech starts; the frame count was latched on

@@ -317,7 +317,7 @@ module punchout_core (
         .ovl_en2(ovl_mode == 2'd3), .ovl_stat2(ovl_stat2),
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
-        .vblank_rise(vblank_rise),
+        .vblank_rise(vblank_rise), .nmi_pulse(nmi_pulse),
         .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
         .dbg_f_overrun(f_overrun), .dbg_f_bg_short(f_bg_short),
         .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall),
@@ -363,13 +363,14 @@ module punchout_core (
         .rst(vlm_rst), .st(vlm_st), .vcu(vlm_vcu), .data(vlm_data),
         .busy(vlm_busy));
 
-    // Both NMIs fire at the start of vertical blanking, as on the board. The
-    // video snapshots its state near the END of blanking, after the handlers
-    // have done their writing, so what they wrote is in this frame's picture.
+    // Both NMIs fire once per frame, from the raster -- earlier in the frame
+    // than the board's vblank, so the handlers' writes are all done before the
+    // video snapshots its state at the end of blanking (NMI_ROW in the video).
+    wire nmi_pulse;
     punchout_main u_main (
         .clk(clk), .reset(mach_reset), .pause(cpu_hold),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
-        .vblank_rise(vblank_rise),
+        .vblank_rise(nmi_pulse),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),
         .vlm_busy(vlm_busy),
         .cpu_vaddr(cpu_vaddr), .cpu_vdin(cpu_vdin), .cpu_vwe(cpu_vwe), .cpu_vq(cpu_vq),
@@ -387,7 +388,7 @@ module punchout_core (
     punchout_sound u_sound (
         .clk(clk), .reset(mach_reset), .snd_reset(snd_reset), .pause(cpu_hold),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
-        .vblank_rise(vblank_rise),
+        .vblank_rise(nmi_pulse),
         .soundlatch(soundlatch), .soundlatch2(soundlatch2),
         .sample(audio), .sample_ce(audio_ce),
         .dbg_dma_req(dbg_dma_req));

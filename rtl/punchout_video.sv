@@ -76,9 +76,11 @@ module punchout_video (
     output logic  [7:0] vid_g,
     output logic  [7:0] vid_b,
 
-    //! ---- one clk pulse at the start of vertical blanking: frame counting,
-    //!      and both CPUs' NMIs, as on the board
+    //! ---- one clk pulse at the start of vertical blanking: frame counting
     output logic        vblank_rise,
+    //! ---- the CPUs' NMI: once per frame like the board's, but EARLIER in
+    //!      this raster -- see NMI_ROW
+    output logic        nmi_pulse,
 
     //! ---- diagnostics
     output logic        dbg_line_overrun, // a line renderer ran past its row
@@ -131,6 +133,21 @@ module punchout_video (
     localparam logic [9:0] H_ACTIVE = 10'd512, H_BPORCH = 10'd24, H_TOTAL = 10'd560;
     localparam logic [9:0] V_ACTIVE = 10'd672, V_BPORCH = 10'd20, V_TOTAL = 10'd714;
     localparam logic [9:0] TOP_ROWS = 10'd224;        // rows 0..223: info screen
+    // The board raises NMI at the start of its 32-line vertical blank and
+    // then scans the visible area, so the game has about 2.1 ms after NMI in
+    // which a write is invisible, and its display updates are written to fit
+    // that: measured, the K.O. meter redraw puts the scroll bytes 20 rows
+    // after NMI and the tiles 75-139 rows after. This raster snapshots the
+    // whole video state once per frame, at row 17, and a snapshot taken
+    // 39 rows (0.9 ms) after NMI fell in the middle of that redraw: one frame
+    // with the new scroll and the old tiles, seen as the K.O. box flickering
+    // left whenever a punch landed. So NMI is raised at row 520 instead,
+    // 211 rows (4.9 ms) before the snapshot -- more time than the board
+    // gives, and nothing can tear: the renderer is drawing the last fight
+    // lines from the PREVIOUS snapshot while the handler runs, and every
+    // write it makes lands in the live RAM only. Once per frame is all the
+    // game knows about NMI; its phase against the display is invisible to it.
+    localparam logic [9:0] NMI_ROW  = 10'd520;
     localparam logic [9:0] TOP_XOFF = 10'd128;        // (512 - 256) / 2, to centre it
 
     localparam [31:0] WIDTHSHIFTED  = 32'd128 << 16;  // both sprite tilemaps
@@ -179,9 +196,11 @@ module punchout_video (
         if (reset) begin
             v_act_d     <= 1'b0;
             vblank_rise <= 1'b0;
+            nmi_pulse   <= 1'b0;
         end else begin
             v_act_d     <= v_act;
             vblank_rise <= v_act_d && !v_act;
+            nmi_pulse   <= (vcnt == NMI_ROW) && (hcnt == 10'd0);
         end
     end
 

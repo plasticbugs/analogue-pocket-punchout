@@ -484,3 +484,18 @@ those gaps so addressing stays trivial.
 * **`chp1-v-2d.2d`** — video timing PROM, unused by MAME.
 * **2A03 #1** — the board has a second sound CPU socket that was never
   populated. Writes to I/O ports 00-01 go nowhere.
+
+## NMI phase on this raster
+
+The board raises NMI at the start of its 32-line vertical blank and the game
+writes its display updates to fit the ~2.1 ms before the beam returns. This
+core snapshots the whole video state once per frame at the end of its own,
+shorter, blanking (raster row 17) and renders both monitors from the snapshot,
+so a write that lands after the snapshot waits a frame. Measured, the game's
+K.O.-meter redraw writes the scroll bytes 20 rows after NMI and the tiles
+75-139 rows after: with NMI at the vblank start (row 692) the snapshot fell
+between them and the box flickered left on every landed punch. So NMI is
+raised at row 520 (`NMI_ROW` in `punchout_video`), 4.9 ms before the
+snapshot; the last fight lines are still being drawn from the previous
+snapshot while the handler runs. Once per frame is all the game can observe.
+

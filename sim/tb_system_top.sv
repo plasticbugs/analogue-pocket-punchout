@@ -47,7 +47,11 @@ module tb_system_top (
     output wire  [39:0] dbg_spr2_ctrl,
     output wire   [7:0] dbg_palbank,
     output wire   [9:0] dbg_ctrl_wr_vcnt,
-    output wire         dbg_ctrl_wr
+    output wire         dbg_ctrl_wr,
+    //! every CPU write into video RAM, for the bench's write log
+    output wire         dbg_vwe,
+    output wire  [15:0] dbg_vaddr,
+    output wire   [7:0] dbg_vdata
 );
     wire [15:0] dq;
     wire [12:0] sa;
@@ -77,6 +81,9 @@ module tb_system_top (
     // sprite-1 tilemap writes (e000-e7ff), the thing the laugh animation rewrites
     assign dbg_ctrl_wr      = u_core.cpu_vwe && (u_core.cpu_vaddr[15:11] == 5'b11100);
     assign dbg_ctrl_wr_vcnt = u_core.u_video.vcnt;
+    assign dbg_vwe   = u_core.cpu_vwe;
+    assign dbg_vaddr = u_core.cpu_vaddr;
+    assign dbg_vdata = u_core.cpu_vdin;
 
     sdram_model u_model (
         .clk(clk), .dq(dq), .a(sa), .ba(sba), .dqml(sdqml), .dqmh(sdqmh),

@@ -100,7 +100,7 @@ module tb_video_top (
         .ovl_en(1'b0), .ovl_stat(16'd0), .ovl_en2(1'b0), .ovl_stat2(16'd0),
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
-        .vblank_rise(vblank_rise),
+        .vblank_rise(vblank_rise), .nmi_pulse(),
         .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
         .probe_clr(1'b0), .vid_mode(2'd0), .rtest(2'd0), .hijack(1'b0), .porta_rec(), .cur_move(4'd0), .cur_fast(1'b0), .dbg_f_black(), .probe_rec(), .probe_cnt(),
         .probe_wr_bot(), .probe_wr_top(), .probe_wr_max(), .probe_wr_last());

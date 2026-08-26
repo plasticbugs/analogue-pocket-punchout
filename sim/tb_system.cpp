@@ -204,6 +204,28 @@ int main(int argc, char **argv) {
             wr_hist[v / 12]++;
         }
         prev_wr = dut->dbg_ctrl_wr;
+        // PO_VLOG=lo-hi (hex byte addresses), PO_VLOG_FROM/TO (frames): every
+        // CPU write into that range, with the raster row it landed on
+        if (getenv("PO_VLOG") && dut->dbg_vwe) {
+            static unsigned lo = 0, hi = 0; static int f0 = 0, f1 = 1 << 30; static bool init = false;
+            if (!init) { sscanf(getenv("PO_VLOG"), "%x-%x", &lo, &hi);
+                         if (getenv("PO_VLOG_FROM")) f0 = atoi(getenv("PO_VLOG_FROM"));
+                         if (getenv("PO_VLOG_TO"))   f1 = atoi(getenv("PO_VLOG_TO")); init = true; }
+            unsigned a = dut->dbg_vaddr;
+            if (a >= lo && a <= hi && frame >= f0 && frame <= f1)
+                printf("vw %d %d %04x %02x\n", frame, dut->dbg_ctrl_wr_vcnt, a, dut->dbg_vdata);
+        }
+        if (getenv("PO_VLM")) {
+            static bool pb = false;
+            bool b = dut->rootp->tb_system_top__DOT__u_core__DOT__u_vlm__DOT__busy;
+            if (b != pb) {
+                if (b) printf("vlm: frame %d BUSY on, table byte %02x\n", frame,
+                              dut->rootp->tb_system_top__DOT__u_core__DOT__u_vlm__DOT__dbg_phrase);
+                else   printf("vlm: frame %d BUSY off\n", frame);
+                fflush(stdout);
+            }
+            pb = b;
+        }
         snapshot_check(dut->rootp);
         if (dut->vblank_rise) {
             frame++;
