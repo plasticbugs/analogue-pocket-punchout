@@ -590,11 +590,13 @@ and squares 1-7 are bits 1-7 of the attribute byte that pass used, red for 1:
 bits 2-6 the colour, bit 7 the x flip. For the canvas the expected byte is
 0x07: squares 1 and 2 red, the rest green. Upper row: the pixel's palette
 index, bit 0 at the left, red for 1. All grey until a hit. That is page 0 of
-**Probe Page**; page 1 is the hit's fight x (upper) and line (lower); page 2
-the fight PROM's R and G nibbles (upper), B nibble then palette-bank bits 1
-and 0, the top-monitor flag and the line-buffer select (lower); page 3 is a
-live count of black pixels in the window in the last frame, low byte upper,
-which says whether the bar is still being drawn while the CPUs are frozen.
+**Probe Page**; page 1 is the hit's fight x (upper) and line (lower); pages 2
+and 3 are live per-frame counts of black pixels in the window, in units of
+64: written by the background pass (2 upper), sprite 1 (2 lower), sprite 2
+(3 upper), and pixels whose index was 7, the canvas entry (3 lower).
+**Video Path** offers the palette (normal), the raw index (R from bits 7-5, G
+from 4-2, B from 1-0: the canvas is blue), the writer tag (green background,
+red sprite 1, yellow sprite 2) and index 7 in white with the rest raw.
 
 **First hit on the bar** (v0.1.0-alpha.1, reported from the panel): lower
 row `G RR GGGGG`, upper row `RRR GGGGG`. That is: written by the
@@ -607,6 +609,22 @@ also records where the hit was, the six PROM nibbles, the bank bits and the
 line-buffer select, selectable by **Probe Page**; **Video Path: Raw index**
 bypasses the PROMs and paints the index itself (the canvas comes out blue),
 which shows the bar's true line-buffer contents with no probe in the loop.
+
+**Second hit** (build f35bca5, pages read from the panel; the record in that
+build was one bit short and every field shifted by one, undone here): the hit
+is at fight **x 0, line 144** -- the bar's top-left corner, and line 144 is
+the first line of tile row 20. Index 7, attribute 0x07, background pass, bank
+0, fight screen, and the three fight PROM nibbles all **0xF**. The live count
+was 9664 raster pixels black in the window per frame, about 24 lines by 100:
+**the bar is redrawn every frame from a frozen, static state**, so it is
+deterministic in the render or display path. In **Raw index** mode the bar
+region shows as a *lighter* blue than the canvas -- an index with higher
+green bits than 7 -- which does not agree with the probe's index 7 unless the
+bar's first pixel differs from the rest. The bar is 88 wide and 24 tall,
+which is exactly the Game Over box (11 by 3 tiles of sprite 2), whose black
+tiles are index 55: light blue in raw mode. Next build: a video mode that
+paints each pixel by the pass that wrote it, and live black-pixel counts per
+writer.
 
 The first probe tested the palette index for 0-3 (colour 0). It fired on the
 credit screen's black tiles, as it should, and **not on the bar** -- so the

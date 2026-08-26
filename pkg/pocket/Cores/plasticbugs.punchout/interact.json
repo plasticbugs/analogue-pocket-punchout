@@ -88,11 +88,11 @@
             "value": "0x00000100"
           },
           {
-            "name": "2: PROM nibbles / bank",
+            "name": "2: black by bg / spr1 (live)",
             "value": "0x00000200"
           },
           {
-            "name": "3: black count (live)",
+            "name": "3: black by spr2 / idx 7 (live)",
             "value": "0x00000300"
           }
         ]
@@ -103,7 +103,7 @@
         "persist": false,
         "address": "0xF2000000",
         "defaultval": 0,
-        "mask": "0xFFFFFBFF",
+        "mask": "0xFFFFF3FF",
         "name": "Video Path",
         "id": 45,
         "options": [
@@ -114,6 +114,14 @@
           {
             "name": "Raw index (test)",
             "value": "0x00000400"
+          },
+          {
+            "name": "Writer tag (test)",
+            "value": "0x00000800"
+          },
+          {
+            "name": "Index 7 white (test)",
+            "value": "0x00000C00"
           }
         ]
       },

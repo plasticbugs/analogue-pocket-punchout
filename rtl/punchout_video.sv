@@ -94,10 +94,10 @@ module punchout_video (
     //!      the raw attribute byte that pass used and its palette index.
     //!      Cleared by probe_clr.
     input  wire         probe_clr,
-    input  wire         raw_video,        // show the palette index instead of the colour
+    input  wire   [1:0] vid_mode,         // 0 palette, 1 raw index, 2 writer tag, 3 index 7 in white
     output logic        dbg_f_black,
-    output wire  [63:0] probe_rec,        // see the assign at the probe
-    output logic [15:0] probe_cnt         // black pixels in the window, last full frame
+    output wire  [62:0] probe_rec,        // see the assign at the probe
+    output logic [31:0] probe_cnt         // black pixels in the window per frame, by writer: see below
 );
 
     // =========================================================================
@@ -965,8 +965,9 @@ module punchout_video (
                   && (dl_y >= PROBE_Y0) && (dl_y <= PROBE_Y1) && (dl_x < PROBE_X1)
                   && (pr4 == 4'hf) && (pg4 == 4'hf) && (pb4 == 4'hf);
     logic        probe_valid;
-    logic [62:0] probe_lat;
-    logic [15:0] cnt_run;
+    logic [61:0] probe_lat;   // exactly the width of the record below: a wider
+                              // register zero-extends it and shifts every field
+    logic [13:0] cnt_bg, cnt_s1, cnt_s2, cnt_i7;   // black pixels this frame, by tag
     wire  [3:0] pr4t = prom_q[0][3:0], pg4t = prom_q[1][3:0], pb4t = prom_q[2][3:0];
     always_ff @(posedge clk) begin
         dbg_f_black <= 1'b0;
@@ -985,13 +986,20 @@ module punchout_video (
                              dl_top[0], lb_sel };          // [2:1]
             dbg_f_black <= 1'b1;
         end
-        // black pixels in the window per frame, live: says whether the bar is
-        // still being drawn while the CPUs are frozen
+        // black pixels in the window per frame, live, by the pass that wrote
+        // them and by whether the index was 7. Reported in units of 64 so a
+        // count fits eight squares; the window holds 17280 raster pixels.
         if (reset) begin
-            cnt_run <= '0; probe_cnt <= '0;
+            cnt_bg <= '0; cnt_s1 <= '0; cnt_s2 <= '0; cnt_i7 <= '0; probe_cnt <= '0;
         end else if (vblank_rise) begin
-            probe_cnt <= cnt_run; cnt_run <= '0;
-        end else if (probe_hit && cnt_run != 16'hffff) cnt_run <= cnt_run + 16'd1;
+            probe_cnt <= {cnt_i7[13:6], cnt_s2[13:6], cnt_s1[13:6], cnt_bg[13:6]};
+            cnt_bg <= '0; cnt_s1 <= '0; cnt_s2 <= '0; cnt_i7 <= '0;
+        end else if (probe_hit) begin
+            if (dl_tag[9:8] == 2'd0) cnt_bg <= cnt_bg + 14'd1;
+            if (dl_tag[9:8] == 2'd1) cnt_s1 <= cnt_s1 + 14'd1;
+            if (dl_tag[9:8] == 2'd2) cnt_s2 <= cnt_s2 + 14'd1;
+            if (dl_idx == 8'd7)      cnt_i7 <= cnt_i7 + 14'd1;
+        end
     end
     assign probe_rec = {probe_valid, probe_lat};
 
@@ -1045,12 +1053,21 @@ module punchout_video (
     always_ff @(posedge clk) if (ce_pix) begin
         if (dl_ovl) begin
             {vid_r, vid_g, vid_b} <= ovl_rgb;
-        end else if (raw_video) begin
+        end else if (vid_mode == 2'd1 || (vid_mode == 2'd3 && dl_idx != 8'd7)) begin
             // the palette index as a colour, bypassing the PROMs: R from bits
             // 7-5, G from 4-2, B from 1-0. The canvas (7) comes out blue.
             vid_r <= dl_show[0] ? {dl_idx[7:5], 5'b0} : 8'h00;
             vid_g <= dl_show[0] ? {dl_idx[4:2], 5'b0} : 8'h00;
             vid_b <= dl_show[0] ? {dl_idx[1:0], 6'b0} : 8'h00;
+        end else if (vid_mode == 2'd3) begin
+            // index 7 -- the canvas entry -- in white, everything else raw
+            {vid_r, vid_g, vid_b} <= dl_show[0] ? 24'hFFFFFF : 24'h000000;
+        end else if (vid_mode == 2'd2) begin
+            // the pass that wrote the pixel: green background, red sprite 1
+            // (the opponent), yellow sprite 2 (the player / the Game Over box)
+            vid_r <= (dl_show[0] && dl_tag[9:8] != 2'd0) ? 8'hC0 : 8'h00;
+            vid_g <= (dl_show[0] && dl_tag[9:8] != 2'd1) ? 8'hC0 : 8'h00;
+            vid_b <= 8'h00;
         end else begin
             vid_r <= dl_show[0] ? ~{r4, r4} : 8'h00;
             vid_g <= dl_show[0] ? ~{g4, g4} : 8'h00;
