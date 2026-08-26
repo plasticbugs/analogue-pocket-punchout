@@ -583,12 +583,20 @@ fight screen, behind **Diagnostics Overlay** in the Pocket menu:
 96 clocks, 4 loader queue overflowed, 5 black probe hit, 6 ROM readback,
 7 pattern test.
 
-**Black probe** (freezes the CPUs on the hit): square 0 is the pass that
-wrote the first colour-0 pixel seen in the window -- green background, red
-sprite 1, yellow sprite 2 -- and squares 1-7 are bits 1-7 of the attribute
-byte that pass used, red for 1: bits 2-6 the colour, bit 7 the x flip. For
-the canvas the expected byte is 0x07, which is squares 1 and 2 red and the
-rest green. All grey until a hit.
+**Black probe** (freezes the CPUs on the hit): the first pixel that leaves
+the core black inside fight lines 136-171, x < 120. Lower row: square 0 is
+the pass that wrote it -- green background, red sprite 1, yellow sprite 2 --
+and squares 1-7 are bits 1-7 of the attribute byte that pass used, red for 1:
+bits 2-6 the colour, bit 7 the x flip. For the canvas the expected byte is
+0x07: squares 1 and 2 red, the rest green. Upper row: the pixel's palette
+index, bit 0 at the left, red for 1. All grey until a hit.
+
+The first probe tested the palette index for 0-3 (colour 0). It fired on the
+credit screen's black tiles, as it should, and **not on the bar** -- so the
+bar is not colour 0. The fight palette has 49 black entries in bank 0 --
+0-3, 36, 37, 39, 44, 45, 47, 49, 51, 53, 55, 65, 67-69, 72, 73, and pen 3 of
+nearly every colour from 25 up -- so an index test cannot cover them. The
+probe now tests the colour itself, and reports the index.
 
 The two self-tests run with the machine held in reset after every load and
 reset, and again whenever **SDRAM Read Timing** is changed from the menu. They

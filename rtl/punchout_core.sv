@@ -225,8 +225,10 @@ module punchout_core (
     // ---- diagnostic overlay: eight squares, two bits each
     //      0 grey = not applicable, 1 green = good, 2 red = bad, 3 yellow = busy
     function automatic [1:0] rg(input bad); rg = bad ? 2'd2 : 2'd1; endfunction
-    function automatic [1:0] pb(input bit1); pb = !probe_out[10] ? 2'd0 : bit1 ? 2'd2 : 2'd1; endfunction
-    wire [10:0] probe_out;
+    function automatic [1:0] pb(input bit1); pb = !probe_out[18] ? 2'd0 : bit1 ? 2'd2 : 2'd1; endfunction
+    wire [18:0] probe_out;
+    wire [15:0] ovl_stat2 = { pb(probe_out[7]), pb(probe_out[6]), pb(probe_out[5]), pb(probe_out[4]),
+                              pb(probe_out[3]), pb(probe_out[2]), pb(probe_out[1]), pb(probe_out[0]) };
     logic [15:0] ovl_stat;
     always_comb begin
         case (ovl_mode)
@@ -238,14 +240,16 @@ module punchout_core (
             //                 4 load overflow 5 black probe 6 rom 7 pattern
             2'd2: ovl_stat = { rg(sticky[7]), rg(sticky[6]), rg(sticky[8]), rg(sticky[4]),
                                rg(sticky[3]), rg(sticky[2]), rg(sticky[1]), rg(sticky[0]) };
-            // black probe, left to right: 0 the pass that wrote the pixel
-            // (green background, red sprite 1, yellow sprite 2), then bits 1..7
-            // of the attribute byte that pass used (red = 1, green = 0): bits
-            // 2..6 are the colour, bit 7 the x flip. All grey until a hit.
-            2'd3: ovl_stat = { pb(probe_out[7]), pb(probe_out[6]), pb(probe_out[5]), pb(probe_out[4]),
-                               pb(probe_out[3]), pb(probe_out[2]), pb(probe_out[1]),
-                               !probe_out[10] ? 2'd0 : (probe_out[9:8] == 2'd0) ? 2'd1
-                                              : (probe_out[9:8] == 2'd1) ? 2'd2 : 2'd3 };
+            // black probe, lower row, left to right: 0 the pass that wrote
+            // the pixel (green background, red sprite 1, yellow sprite 2),
+            // then bits 1..7 of the attribute byte that pass used (red = 1,
+            // green = 0): bits 2..6 are the colour, bit 7 the x flip. The
+            // upper row is the pixel's palette index, bit 0 at the left.
+            // All grey until a hit.
+            2'd3: ovl_stat = { pb(probe_out[15]), pb(probe_out[14]), pb(probe_out[13]), pb(probe_out[12]),
+                               pb(probe_out[11]), pb(probe_out[10]), pb(probe_out[9]),
+                               !probe_out[18] ? 2'd0 : (probe_out[17:16] == 2'd0) ? 2'd1
+                                              : (probe_out[17:16] == 2'd1) ? 2'd2 : 2'd3 };
             default: ovl_stat = '0;
         endcase
     end
@@ -269,6 +273,7 @@ module punchout_core (
         .sd_addr(vid_sd_addr), .sd_rd(vid_sd_rd),
         .sd_dout16(sd_dout16), .sd_ready(sd_ready),
         .ovl_en(ovl_en), .ovl_stat(ovl_stat),
+        .ovl_en2(ovl_mode == 2'd3), .ovl_stat2(ovl_stat2),
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
         .vblank_rise(vblank_rise),

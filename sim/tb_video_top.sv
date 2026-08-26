@@ -97,7 +97,7 @@ module tb_video_top (
         .cpu_vaddr(cpu_vaddr), .cpu_vdin(cpu_vdin), .cpu_vwe(cpu_vwe), .cpu_vq(),
         .spr1_ctrl(spr1_ctrl), .spr2_ctrl(spr2_ctrl), .palettebank(palettebank),
         .sd_addr(vid_addr), .sd_rd(vid_rd), .sd_dout16(sd_dout16), .sd_ready(sd_ready),
-        .ovl_en(1'b0), .ovl_stat(16'd0),
+        .ovl_en(1'b0), .ovl_stat(16'd0), .ovl_en2(1'b0), .ovl_stat2(16'd0),
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
         .vblank_rise(vblank_rise),

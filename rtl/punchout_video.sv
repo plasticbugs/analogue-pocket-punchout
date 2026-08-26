@@ -64,6 +64,8 @@ module punchout_video (
     //! ---- diagnostic overlay: eight 2-bit status squares along the bottom
     input  wire         ovl_en,
     input  wire  [15:0] ovl_stat,
+    input  wire         ovl_en2,          // a second row of squares above the first
+    input  wire  [15:0] ovl_stat2,
 
     //! ---- video out, in the clk domain, qualified by ce_pix
     output logic        ce_pix,
@@ -86,13 +88,14 @@ module punchout_video (
     output logic        dbg_f_bg_short,   // ...and it was still in the background pass
     output logic        dbg_f_setup_late, // sprite geometry took > 700 clocks
     output logic        dbg_f_sd_stall,   // one SDRAM read took > 96 clocks
-    //! ---- black probe: the first colour-0 pixel displayed inside a fixed
-    //!      window of the fight screen (lines 144-167, x < 89: where the
-    //!      black bar shows on the Pocket), with the pass that wrote it and
-    //!      the raw attribute byte that pass used. Cleared by probe_clr.
+    //! ---- black probe: the first pixel that LEAVES the core black inside a
+    //!      fixed window of the fight screen (lines 136-171, x < 120: where
+    //!      the black bar shows on the Pocket), with the pass that wrote it,
+    //!      the raw attribute byte that pass used and its palette index.
+    //!      Cleared by probe_clr.
     input  wire         probe_clr,
     output logic        dbg_f_black,
-    output wire  [10:0] probe_out         // {valid, writer[1:0], attr[7:0]}
+    output wire  [18:0] probe_out         // {valid, writer[1:0], attr[7:0], index[7:0]}
 );
 
     // =========================================================================
@@ -934,19 +937,31 @@ module punchout_video (
         .ra(disp_x), .re(ce_pix), .q(tb1_q));
     wire [9:0] tag_rd = lb_sel ? tb1_q : tb0_q;
 
-    localparam logic [9:0] PROBE_Y0 = 10'd512;   // fight line 144, first of its two rows
-    localparam logic [9:0] PROBE_Y1 = 10'd559;   // fight line 167, second row
-    localparam logic [9:0] PROBE_X1 = 10'd178;   // fight x < 89
-    logic [9:0] dl_x, dl_y;       // the coordinates of the pixel lb_rd belongs to
+    // The test is on the colour leaving the PROM stage -- "this pixel went out
+    // black" -- not on the palette index, so it catches every black entry the
+    // fight palette has (49 of them in bank 0) and anything downstream of the
+    // index too. The first version tested the index for 0-3 and did not fire
+    // on the bar, which is itself a measurement: the bar is not colour 0.
+    localparam logic [9:0] PROBE_Y0 = 10'd496;   // fight line 136, first of its two rows
+    localparam logic [9:0] PROBE_Y1 = 10'd567;   // fight line 171, second row
+    localparam logic [9:0] PROBE_X1 = 10'd240;   // fight x < 120
+    // Coordinates, index and tag of the pixel whose colour is on r4/g4/b4:
+    // one stage behind the line-buffer read, like dl_show[0].
+    logic [9:0] dl_x, dl_y;
+    logic [7:0] dl_idx;
+    logic [9:0] dl_tag;
     always_ff @(posedge clk) if (ce_pix) begin
-        dl_x <= act_x;
-        dl_y <= act_y;
+        dl_x   <= act_x;
+        dl_y   <= act_y;
+        dl_idx <= lb_rd;
+        dl_tag <= tag_rd;
     end
+    wire [3:0] pr4, pg4, pb4;    // the PROM outputs, assigned where they are chosen
     wire probe_hit = ce_pix && dl_show[0] && !dl_top[0]
                   && (dl_y >= PROBE_Y0) && (dl_y <= PROBE_Y1) && (dl_x < PROBE_X1)
-                  && (lb_rd[7:2] == 6'd0);
-    logic       probe_valid;
-    logic [9:0] probe_tag;
+                  && (pr4 == 4'hf) && (pg4 == 4'hf) && (pb4 == 4'hf);
+    logic        probe_valid;
+    logic [17:0] probe_tag;
     always_ff @(posedge clk) begin
         dbg_f_black <= 1'b0;
         if (reset || probe_clr) begin
@@ -954,7 +969,7 @@ module punchout_video (
             probe_tag   <= '0;
         end else if (probe_hit && !probe_valid) begin
             probe_valid <= 1'b1;
-            probe_tag   <= tag_rd;
+            probe_tag   <= {dl_tag, dl_idx};
             dbg_f_black <= 1'b1;
         end
     end
@@ -965,10 +980,11 @@ module punchout_video (
     // behind a menu option. Cheap, and the only way to see inside a fault that
     // only shows on real hardware (METHODOLOGY 4).
     wire        ovl_row  = ovl_en && (act_y >= 10'd664);
+    wire        ovl_row2 = ovl_en2 && (act_y >= 10'd654) && (act_y < 10'd662);
     wire  [2:0] ovl_idx  = act_x[6:4];
-    wire        ovl_cell = ovl_row && (act_x < 10'd128)
+    wire        ovl_cell = (ovl_row || ovl_row2) && (act_x < 10'd128)
                         && (act_x[3:0] >= 4'd2) && (act_x[3:0] < 4'd14);
-    wire  [1:0] ovl_st   = ovl_stat[2 * ovl_idx +: 2];
+    wire  [1:0] ovl_st   = ovl_row2 ? ovl_stat2[2 * ovl_idx +: 2] : ovl_stat[2 * ovl_idx +: 2];
     logic       dl_ovl;
     logic [1:0] dl_ost;
 
@@ -999,6 +1015,7 @@ module punchout_video (
     wire [3:0] r4 = dl_top[0] ? prom_q[0][3:0] : prom_q[3][3:0];
     wire [3:0] g4 = dl_top[0] ? prom_q[1][3:0] : prom_q[4][3:0];
     wire [3:0] b4 = dl_top[0] ? prom_q[2][3:0] : prom_q[5][3:0];
+    assign pr4 = r4; assign pg4 = g4; assign pb4 = b4;
 
     wire [23:0] ovl_rgb = (dl_ost == 2'd1) ? 24'h00C800 :     // green
                           (dl_ost == 2'd2) ? 24'hDC0000 :     // red
