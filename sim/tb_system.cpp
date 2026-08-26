@@ -154,6 +154,7 @@ int main(int argc, char **argv) {
     // decides how late the renderer can latch it and still be current.
     int wr_min = 9999, wr_max = -1, wr_count = 0;
     bool prev_wr = false;
+    static int wr_hist[64] = {0};                // raster row / 12
     while (next < want.size() && t++ < limit) {
         tick();
         if (dut->dbg_ctrl_wr && !prev_wr) {
@@ -161,6 +162,7 @@ int main(int argc, char **argv) {
             if (v < wr_min) wr_min = v;
             if (v > wr_max) wr_max = v;
             wr_count++;
+            wr_hist[v / 12]++;
         }
         prev_wr = dut->dbg_ctrl_wr;
         if (dut->vblank_rise) {
@@ -279,6 +281,12 @@ int main(int argc, char **argv) {
             }
         }
         prev_ce = ce;
+    }
+    if (getenv("PO_WRHIST")) {
+        printf("sprite-control writes by raster row (active rows are 20..691, "
+               "vblank 692..713 and 0..19):\n");
+        for (int i = 0; i < 60; i++)
+            if (wr_hist[i]) printf("  rows %3d-%3d: %d\n", i * 12, i * 12 + 11, wr_hist[i]);
     }
     if (next < want.size()) {
         fprintf(stderr, "ran out of time after %d frames\n", frame);

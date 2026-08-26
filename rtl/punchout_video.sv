@@ -133,18 +133,6 @@ module punchout_video (
     wire        raw_vs = (vcnt < 10'd4);
     wire        raw_de = h_act && v_act;
 
-    // The big-sprite control registers are latched HERE, near the end of
-    // vertical blanking, not at the start of it.
-    //
-    // MAME renders a frame from the state at the end of that frame's visible
-    // area, which is after the previous frame's NMI handler has run. Latching
-    // at the start of vblank instead captures the state from before that
-    // handler, and the sprite ends up a whole frame behind -- which the
-    // full-system bench saw as a few hundred differing pixels in the logo,
-    // while every tilemap matched exactly. Four rows of margin is about 8000
-    // system clocks, and the setup arithmetic needs 600.
-    wire frame_latch = row_start && (vcnt == V_BPORCH - 10'd4);
-
     logic v_act_d;
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -236,7 +224,6 @@ module punchout_video (
     // monitors cannot disagree about it.
     // -------------------------------------------------------------------------
     logic [8:0] rs_shadow [0:31];
-    logic [8:0] rowscroll [0:31];
     wire        rs_hit = cpu_vwe && vsel_bot && (cpu_vaddr[11:6] == 6'd0);
     wire  [4:0] rs_idx = cpu_vaddr[5:1];
 
@@ -293,11 +280,26 @@ module punchout_video (
     endgenerate
 
     // =========================================================================
-    // Big sprite geometry, computed once per frame during vertical blanking.
+    // Big sprite geometry, computed at the start of EVERY line from the live
+    // control registers -- the way the board reads them.
+    //
+    // It was once per frame, latched at a single instant in vertical blanking.
+    // Two instants were tried. At the start of vblank the latch preceded the
+    // NMI handler's writes and the sprite ran a frame behind MAME. Near the
+    // end of vblank it landed in the MIDDLE of those writes often enough to
+    // capture a torn block -- a new Y low byte with the old high bit, say --
+    // and the sprite spent one frame 256 lines away: on the Pocket, a black
+    // band the sprite's width, flashing, whenever the opponent came in close
+    // to gloat. The board never has that problem because it reads the
+    // registers as the beam scans; a torn value there costs one scanline.
+    //
+    // So this does the same. The arithmetic is ~10 clocks and the skip loop
+    // at most 255 per sprite, inside a 2240-clock row whose worst measured
+    // render is ~1520. The row-scroll table and the palette bank are read
+    // live for the same reason.
     // =========================================================================
     logic [7:0]  c1 [0:7];
     logic [7:0]  c2 [0:4];
-    logic [7:0]  palbank_l;
     logic [11:0] zoom;
     logic        spr1_top_en, spr1_bot_en;
 
@@ -332,13 +334,11 @@ module punchout_video (
             spr2_on <= 1'b0;
         end else begin
             case (fst)
-                FS_IDLE: if (frame_latch) fst <= FS_LATCH;
+                FS_IDLE: if (row_start) fst <= FS_LATCH;
 
                 FS_LATCH: begin
                     for (li = 0; li < 8; li++) c1[li] <= spr1_ctrl[8*li +: 8];
                     for (li = 0; li < 5; li++) c2[li] <= spr2_ctrl[8*li +: 8];
-                    for (li = 0; li < 32; li++) rowscroll[li] <= rs_shadow[li] + 9'd58;
-                    palbank_l   <= palettebank;
                     spr1_top_en <= spr1_ctrl[56];       // dff7 bit 0
                     spr1_bot_en <= spr1_ctrl[57];       // dff7 bit 1
                     zoom        <= {spr1_ctrl[11:8], spr1_ctrl[7:0]};
@@ -450,7 +450,7 @@ module punchout_video (
     wire row_start = (hcnt == 10'd0) && ce_pix;
 
     typedef enum logic [4:0] {
-        R_IDLE,
+        R_IDLE, R_SETUP,
         R_BG_INIT, R_BG_A, R_BG_B, R_BG_C, R_BG_EMIT,
         R_S1_START, R_S1_TILE, R_S1_TW, R_S1_R0, R_S1_R1, R_S1_EMIT,
         R_S2_START, R_S2_TILE, R_S2_TW, R_S2_R, R_S2_EMIT,
@@ -529,7 +529,7 @@ module punchout_video (
             lb_we <= 1'b0;
             sd_rd <= 1'b0;
 
-            if (fst == FS_DONE) begin
+            if (vblank_rise) begin
                 dbg_line_overrun <= 1'b0;
                 dbg_worst_line   <= '0;
             end
@@ -546,10 +546,12 @@ module punchout_video (
                 rend_line <= next_line;
                 bg_col    <= '0;
                 bg_x      <= '0;
-                rs        <= R_BG_INIT;
+                rs        <= R_SETUP;
             end else begin
                 case (rs)
                     R_IDLE: ;
+                    // the sprite geometry for this line is being computed
+                    R_SETUP: if (fst == FS_DONE) rs <= R_BG_INIT;
 
                     // ---------------- background ----------------
                     // The row-scroll lookup happens HERE rather than at
@@ -560,7 +562,7 @@ module punchout_video (
                     // registered rend_line it is just an add and the mux, and
                     // the line can spare the cycle.
                     R_BG_INIT: begin
-                        bg_tx <= rend_top ? 9'd0 : rowscroll[vy[7:3]];
+                        bg_tx <= rend_top ? 9'd0 : (rs_shadow[vy[7:3]] + 9'd58);
                         rs    <= R_BG_A;
                     end
                     // Address is already stable from the previous state, so
@@ -768,7 +770,7 @@ module punchout_video (
     end
 
     // The bank is palettebank bit 1 for the top monitor, bit 0 for the bottom.
-    assign pal_ra = {dl_top[0] ? palbank_l[1] : palbank_l[0], lb_rd};
+    assign pal_ra = {dl_top[0] ? palettebank[1] : palettebank[0], lb_rd};
 
     // component = 255 - pal4bit(v), and pal4bit(v) is {v,v}, so it is one NOT.
     // Index [0], not [1]. hcnt settles one tick before disp_x is evaluated

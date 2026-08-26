@@ -26,6 +26,11 @@ local PALBANK = tonumber(os.getenv("PO_PALBANK") or "")
 -- attract mode: deterministic from reset, and therefore something the RTL can
 -- be held to frame for frame.
 local NOINPUT = os.getenv("PO_NOINPUT") ~= nil
+-- PO_LOSE: coin up, tap once or twice to start the round, then stand there.
+-- Glass Joe knocks an idle player down and comes in close to gloat, which is
+-- the biggest magnification the game produces and where the first hardware
+-- build showed a flashing black bar.
+local LOSE = os.getenv("PO_LOSE") ~= nil
 
 local mach = manager.machine
 local sp   = mach.devices[":maincpu"].spaces["program"]
@@ -134,7 +139,9 @@ emu.register_frame_done(function()
     -- on a few coprime periods so successive target frames land on genuinely
     -- different situations rather than the same pose over and over.
     hold(coin, (not NOINPUT) and frame >= 200 and frame < 206)
-    if (not NOINPUT) and frame > 400 then
+    if LOSE then
+        hold(b1, (frame >= 700 and frame < 706) or (frame >= 900 and frame < 906) or (frame >= 1100 and frame < 1106))
+    elseif (not NOINPUT) and frame > 400 then
         hold(b1,    (frame // 23) % 3 == 0)
         hold(b2,    (frame // 31) % 4 == 0)
         hold(b3,    (frame // 97) % 7 == 0)
