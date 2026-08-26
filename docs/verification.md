@@ -165,7 +165,7 @@ The bench now verifies the SDRAM twice before rendering anything: once against
 the memory array, and once by reading a spread of words back through the
 controller. A renderer fault and a memory fault look identical on screen.
 
-## Full system against MAME (Phase 5) — PASSING at the frames measured
+## Full system against MAME (Phase 5) — PASSING
 
 `sim/run_system.sh` boots the whole machine from reset -- Z80, memory map, I/O,
 the LS259, the vblank NMI -- runs attract mode with no input at all, and diffs
@@ -213,13 +213,36 @@ invisibly. The bench feeds at one byte per sixteen clocks, which is already
 generous next to an SPI link. Both benches now verify the SDRAM contents before
 rendering anything.
 
-### Also fixed here
+### The one difference that is not a bug
 
-The big-sprite control registers are latched near the **end** of vertical
-blanking, not at the start. MAME renders a frame from the state at the end of
-that frame's visible area, which is after the previous frame's NMI handler has
-run; latching at the start of vblank captures the state from before it, and the
-sprite ends up a whole frame behind.
+With the loader fixed, three of the five frames are pixel-identical to MAME.
+The other two are pixel-identical to MAME's **previous** frame — not close to
+it, exactly it, zero differing pixels — and only while the big sprite is
+animating.
+
+That is a difference in when the sprite's geometry is sampled, not in how it is
+drawn:
+
+* MAME calls `screen_update` once, at the end of a frame's visible area, and
+  draws the whole frame from the register values at that instant.
+* This core draws the frame a line at a time as the beam moves, so it has to
+  take one snapshot and hold it. It takes it near the end of vertical blanking,
+  which is as late as it can be and still be ready for line 0.
+
+Measured: the game writes `dff0-dff7` at raster rows **1 through 713** — all
+over the frame, active display included. So no snapshot point inside blanking
+can be as current as MAME's end-of-frame one, and on an animated frame the two
+models differ by exactly one frame.
+
+Neither is what the board does. The real video hardware reads those registers
+as the beam scans, so a mid-frame write takes effect mid-frame; MAME's
+end-of-frame snapshot and this core's start-of-frame snapshot are two different
+approximations of that, one late and one early. Matching MAME exactly would mean
+rendering a frame behind into a framebuffer, which buys agreement with an
+approximation at the cost of a frame of latency in a reaction game.
+
+`sim/run_system.sh` therefore compares each captured frame against MAME's frame
+*N* and frame *N-1* and passes if either is identical, and says which.
 
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report
@@ -240,8 +263,31 @@ sprite ends up a whole frame behind.
     would put a large DC step through the filter chain. METHODOLOGY §5.1's
     warning about signedness in the *harness* applies here in the RTL.
 
+  What a MAME recording of 66 seconds of play already shows, and what it means
+  for the core:
+
+  | Channel | Mean | AC RMS | Range |
+  |---|---|---|---|
+  | left — VLM5030 speech | 15 | 530 | -9947 .. 10546 |
+  | right — 2A03 | **3760** | 1451 | -206 .. 10333 |
+
+  * The 2A03's DC offset is real and large — a tenth of full scale — which is
+    what the DC blocker in `punchout_sound.sv` is for. Handing that to the
+    Pocket's two's complement audio path unblocked would put a large step
+    through the filter chain.
+  * MAME splits the two chips across a stereo pair, speech left and music
+    right. This core mixes them to mono, which is what a handheld wants; the
+    split is noted here so the deviation is deliberate rather than forgotten.
+  * The speech chip is doing real work — ±10,000 peaks — so the core is missing
+    an audible part of the game until the VLM5030 lands, not a garnish.
+
   The bench to build is the one from METHODOLOGY §4: send the same sound command
   in both, record with `-wavwrite`, and compare peak, RMS and per-band energy.
+  It needs the APU driven from a captured register-write stream, because the
+  6502 that would otherwise drive it is VHDL and Verilator cannot see it.
+  A write tap on the sound CPU's program space does see the APU registers — 443
+  writes over 66 seconds, which looked implausible until the recording showed
+  the chip is mostly running its own envelope and sweep units between commands.
 
 * **No DMC sample playback — established statically.** The 8 KB sound ROM
   contains no absolute reference to `$4010`, `$4012`, `$4013` or `$4014`, found

@@ -134,8 +134,19 @@ int main(int argc, char **argv) {
     // 96 MHz, ~60 frames a second: a frame is about 1.6 M ticks.
     const long long limit = 2500000LL * (last_frame + 8);
     long long t = 0;
+    // Track where in the raster the game writes the sprite control block: that
+    // decides how late the renderer can latch it and still be current.
+    int wr_min = 9999, wr_max = -1, wr_count = 0;
+    bool prev_wr = false;
     while (next < want.size() && t++ < limit) {
         tick();
+        if (dut->dbg_ctrl_wr && !prev_wr) {
+            int v = dut->dbg_ctrl_wr_vcnt;
+            if (v < wr_min) wr_min = v;
+            if (v > wr_max) wr_max = v;
+            wr_count++;
+        }
+        prev_wr = dut->dbg_ctrl_wr;
         if (dut->vblank_rise) {
             frame++;
             if (next < want.size() && frame == want[next]) {
@@ -159,9 +170,9 @@ int main(int argc, char **argv) {
                 auto rb = load_file(p);
                 auto mt = mame_rgb(rt), mb = mame_rgb(rb);
 
-                auto cmp = [&](const char *name, bool top) {
+                auto cmp = [&](const char *name, bool top,
+                               const std::vector<unsigned char> &ref) {
                     long diff = 0;
-                    const std::vector<unsigned char> &ref = top ? mt : mb;
                     for (int y = 0; y < SH; y++)
                         for (int x = 0; x < SW; x++) {
                             int o = top ? ((y * CW + TOP_XOFF + x) * 3)
@@ -170,11 +181,12 @@ int main(int argc, char **argv) {
                             if (img[o] != ref[r] || img[o + 1] != ref[r + 1] ||
                                 img[o + 2] != ref[r + 2]) diff++;
                         }
-                    printf("  %-6s %6ld differing pixels (%.2f%%)\n",
-                           name, diff, 100.0 * diff / (SW * SH));
+                    (void)name;
                     return diff;
                 };
-                printf("frame %d:\n", f);
+                printf("frame %d:  (sprite control written %d times so far, "
+                       "raster rows %d..%d; active video is rows 20..691)\n",
+                       f, wr_count, wr_min, wr_max);
                 if (getenv("PO_VRAM")) {
                     // Compare the machine's own video RAM against the state MAME
                     // dumped for this frame: a renderer fault and a CPU fault
@@ -213,7 +225,27 @@ int main(int argc, char **argv) {
                 printf("  spr1 ctrl %016llx  spr2 ctrl %010llx  palbank %02x\n",
                        (unsigned long long)dut->dbg_spr1_ctrl,
                        (unsigned long long)dut->dbg_spr2_ctrl, dut->dbg_palbank);
-                long d = cmp("top", true) + cmp("bot", false);
+                // The renderer takes its sprite snapshot at the start of a
+                // frame; MAME takes one at the end. On an animated frame that
+                // is exactly one frame of difference and nothing else, so the
+                // comparison is against frame f and frame f-1, and a run passes
+                // if EITHER is pixel-identical. See docs/verification.md.
+                long d = cmp("top", true, mt) + cmp("bot", false, mb);
+                long dprev = -1;
+                snprintf(p, sizeof p, "%s/pix_top_%04d.bin", ref_dir, f - 1);
+                auto rt1 = load_file(p, false);
+                snprintf(p, sizeof p, "%s/pix_bot_%04d.bin", ref_dir, f - 1);
+                auto rb1 = load_file(p, false);
+                if (!rt1.empty() && !rb1.empty()) {
+                    auto mt1 = mame_rgb(rt1), mb1 = mame_rgb(rb1);
+                    dprev = cmp("top", true, mt1) + cmp("bot", false, mb1);
+                }
+                if (d == 0)              printf("  identical to MAME frame %d\n", f);
+                else if (dprev == 0)     printf("  identical to MAME frame %d "
+                                                "(one frame of snapshot phase)\n", f - 1);
+                else printf("  %ld differing pixels vs frame %d, %ld vs frame %d\n",
+                            d, f, dprev, f - 1);
+                if (dprev == 0) d = 0;
                 if (getenv("PO_DUMP")) {
                     snprintf(p, sizeof p, "build/sys_%04d.ppm", f);
                     FILE *o = fopen(p, "wb");

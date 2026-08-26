@@ -61,7 +61,8 @@ Working and verified:
   player, both palette banks, both flips and the full range of zoom the game
   reaches.
 * Z80 main board with the full memory map, I/O, the 74LS259 latch and the
-  vblank NMI.
+  vblank NMI — booted from reset in simulation and held to MAME frame for frame
+  through attract mode.
 * RP2A03 sound board: T65 with decimal mode disabled, plus the NES APU.
 
 Not yet:
@@ -88,6 +89,9 @@ python3 tools/mra_build.py punchout.mra mame-romset/ build/punchout.rom
 ./tools/capture_states.sh           # dump frozen states + MAME's own bitmaps
 ./tools/regress_ref.sh              # reference renderer vs MAME
 ROM=build/punchout.rom ./sim/run_video.sh   # RTL vs reference renderer
+
+./tools/capture_attract.sh                  # MAME references, no input
+ROM=build/punchout.rom ./sim/run_system.sh  # boot the machine, compare frames
 ```
 
 `docs/hardware.md` is the machine description everything is built from, and

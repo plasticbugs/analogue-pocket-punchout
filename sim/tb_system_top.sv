@@ -42,7 +42,9 @@ module tb_system_top (
     output wire         audio_ce,
     output wire  [63:0] dbg_spr1_ctrl,
     output wire  [39:0] dbg_spr2_ctrl,
-    output wire   [7:0] dbg_palbank
+    output wire   [7:0] dbg_palbank,
+    output wire   [9:0] dbg_ctrl_wr_vcnt,
+    output wire         dbg_ctrl_wr
 );
     wire [15:0] dq;
     wire [12:0] sa;
@@ -68,6 +70,9 @@ module tb_system_top (
     assign dbg_spr1_ctrl = u_core.spr1_ctrl;
     assign dbg_spr2_ctrl = u_core.spr2_ctrl;
     assign dbg_palbank   = u_core.palettebank;
+    // Where in the raster does the game write the big-sprite control block?
+    assign dbg_ctrl_wr      = u_core.u_main.reg_hit;
+    assign dbg_ctrl_wr_vcnt = u_core.u_video.vcnt;
 
     sdram_model u_model (
         .clk(clk), .dq(dq), .a(sa), .ba(sba), .dqml(sdqml), .dqmh(sdqmh),
