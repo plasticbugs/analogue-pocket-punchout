@@ -75,7 +75,7 @@
         "persist": false,
         "address": "0xF2000000",
         "defaultval": 0,
-        "mask": "0xFFFFFFEF",
+        "mask": "0xFFFFFCFF",
         "name": "Probe Page",
         "id": 44,
         "options": [
@@ -103,7 +103,7 @@
         "persist": false,
         "address": "0xF2000000",
         "defaultval": 0,
-        "mask": "0xFFFFFFEF",
+        "mask": "0xFFFFFBFF",
         "name": "Video Path",
         "id": 45,
         "options": [
