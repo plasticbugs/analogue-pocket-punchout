@@ -94,8 +94,10 @@ module punchout_video (
     //!      the raw attribute byte that pass used and its palette index.
     //!      Cleared by probe_clr.
     input  wire         probe_clr,
+    input  wire         raw_video,        // show the palette index instead of the colour
     output logic        dbg_f_black,
-    output wire  [18:0] probe_out         // {valid, writer[1:0], attr[7:0], index[7:0]}
+    output wire  [63:0] probe_rec,        // see the assign at the probe
+    output logic [15:0] probe_cnt         // black pixels in the window, last full frame
 );
 
     // =========================================================================
@@ -957,23 +959,41 @@ module punchout_video (
         dl_tag <= tag_rd;
     end
     wire [3:0] pr4, pg4, pb4;    // the PROM outputs, assigned where they are chosen
+    wire [9:0] dl_yb = dl_y - 10'd224;
+    wire [7:0] fight_line = dl_yb[8:1];
     wire probe_hit = ce_pix && dl_show[0] && !dl_top[0]
                   && (dl_y >= PROBE_Y0) && (dl_y <= PROBE_Y1) && (dl_x < PROBE_X1)
                   && (pr4 == 4'hf) && (pg4 == 4'hf) && (pb4 == 4'hf);
     logic        probe_valid;
-    logic [17:0] probe_tag;
+    logic [62:0] probe_lat;
+    logic [15:0] cnt_run;
+    wire  [3:0] pr4t = prom_q[0][3:0], pg4t = prom_q[1][3:0], pb4t = prom_q[2][3:0];
     always_ff @(posedge clk) begin
         dbg_f_black <= 1'b0;
         if (reset || probe_clr) begin
             probe_valid <= 1'b0;
-            probe_tag   <= '0;
+            probe_lat   <= '0;
         end else if (probe_hit && !probe_valid) begin
             probe_valid <= 1'b1;
-            probe_tag   <= {dl_tag, dl_idx};
+            probe_lat   <= { dl_tag,                       // [62:53] writer[1:0], attr[7:0]
+                             dl_idx,                       // [52:45] palette index
+                             dl_x[8:1],                    // [44:37] fight x
+                             fight_line,                   // [36:29] fight line
+                             pr4, pg4, pb4,                // [28:17] the fight PROM nibbles
+                             pr4t, pg4t, pb4t,             // [16:5]  the info PROM nibbles
+                             palbank_l[1:0],               // [4:3]
+                             dl_top[0], lb_sel };          // [2:1]
             dbg_f_black <= 1'b1;
         end
+        // black pixels in the window per frame, live: says whether the bar is
+        // still being drawn while the CPUs are frozen
+        if (reset) begin
+            cnt_run <= '0; probe_cnt <= '0;
+        end else if (vblank_rise) begin
+            probe_cnt <= cnt_run; cnt_run <= '0;
+        end else if (probe_hit && cnt_run != 16'hffff) cnt_run <= cnt_run + 16'd1;
     end
-    assign probe_out = {probe_valid, probe_tag};
+    assign probe_rec = {probe_valid, probe_lat};
 
     // Diagnostic overlay: eight 12x8 squares in the bottom eight rows, at the
     // left of the fight screen, colour from two status bits each. Hidden
@@ -1025,6 +1045,12 @@ module punchout_video (
     always_ff @(posedge clk) if (ce_pix) begin
         if (dl_ovl) begin
             {vid_r, vid_g, vid_b} <= ovl_rgb;
+        end else if (raw_video) begin
+            // the palette index as a colour, bypassing the PROMs: R from bits
+            // 7-5, G from 4-2, B from 1-0. The canvas (7) comes out blue.
+            vid_r <= dl_show[0] ? {dl_idx[7:5], 5'b0} : 8'h00;
+            vid_g <= dl_show[0] ? {dl_idx[4:2], 5'b0} : 8'h00;
+            vid_b <= dl_show[0] ? {dl_idx[1:0], 6'b0} : 8'h00;
         end else begin
             vid_r <= dl_show[0] ? ~{r4, r4} : 8'h00;
             vid_g <= dl_show[0] ? ~{g4, g4} : 8'h00;

@@ -70,6 +70,54 @@
         "value": "0x00000080"
       },
       {
+        "type": "list",
+        "enabled": true,
+        "persist": false,
+        "address": "0xF2000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFFEF",
+        "name": "Probe Page",
+        "id": 44,
+        "options": [
+          {
+            "name": "0: index / writer+attr",
+            "value": "0x00000000"
+          },
+          {
+            "name": "1: x / line",
+            "value": "0x00000100"
+          },
+          {
+            "name": "2: PROM nibbles / bank",
+            "value": "0x00000200"
+          },
+          {
+            "name": "3: black count (live)",
+            "value": "0x00000300"
+          }
+        ]
+      },
+      {
+        "type": "list",
+        "enabled": true,
+        "persist": false,
+        "address": "0xF2000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFFEF",
+        "name": "Video Path",
+        "id": 45,
+        "options": [
+          {
+            "name": "Palette (normal)",
+            "value": "0x00000000"
+          },
+          {
+            "name": "Raw index (test)",
+            "value": "0x00000400"
+          }
+        ]
+      },
+      {
         "name": "SDRAM Read Timing",
         "id": 41,
         "type": "list",

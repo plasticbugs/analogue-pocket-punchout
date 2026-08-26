@@ -589,7 +589,24 @@ the pass that wrote it -- green background, red sprite 1, yellow sprite 2 --
 and squares 1-7 are bits 1-7 of the attribute byte that pass used, red for 1:
 bits 2-6 the colour, bit 7 the x flip. For the canvas the expected byte is
 0x07: squares 1 and 2 red, the rest green. Upper row: the pixel's palette
-index, bit 0 at the left, red for 1. All grey until a hit.
+index, bit 0 at the left, red for 1. All grey until a hit. That is page 0 of
+**Probe Page**; page 1 is the hit's fight x (upper) and line (lower); page 2
+the fight PROM's R and G nibbles (upper), B nibble then palette-bank bits 1
+and 0, the top-monitor flag and the line-buffer select (lower); page 3 is a
+live count of black pixels in the window in the last frame, low byte upper,
+which says whether the bar is still being drawn while the CPUs are frozen.
+
+**First hit on the bar** (v0.1.0-alpha.1, reported from the panel): lower
+row `G RR GGGGG`, upper row `RRR GGGGG`. That is: written by the
+**background pass**, attribute **0x07**, palette index **7** -- the tan
+canvas entry, the correct value in every respect -- and the colour that left
+the PROM stage for it was black. The canvas beside the bar on the same lines
+is the same index 7 and renders tan. So three separate PROM RAMs answered a
+correct address with 0xF, transiently, on the hardware only. The probe now
+also records where the hit was, the six PROM nibbles, the bank bits and the
+line-buffer select, selectable by **Probe Page**; **Video Path: Raw index**
+bypasses the PROMs and paints the index itself (the canvas comes out blue),
+which shows the bar's true line-buffer contents with no probe in the loop.
 
 The first probe tested the palette index for 0-3 (colour 0). It fired on the
 credit screen's black tiles, as it should, and **not on the bar** -- so the

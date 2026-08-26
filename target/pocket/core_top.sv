@@ -932,6 +932,8 @@ module core_top
     wire [1:0] po_ovl_mode = mod_sw0[3] ? {mod_sw0[6:5] == 2'd0 ? 2'd1 : mod_sw0[6:5]} : 2'd0;
     wire       po_rd_late  = ~mod_sw0[4];
     wire       po_freeze   = mod_sw0[7] | pause_core;
+    wire [1:0] po_probe_page = mod_sw1[1:0];
+    wire       po_raw_video  = mod_sw1[2];
     wire [7:0] po_pad_raw  = { cont1_key[15], cont1_key[14],          // start, select
                                cont1_key[9],  cont1_key[8],           // R1, L1
                                cont1_key[4],  cont1_key[5],           // A, B
@@ -945,6 +947,8 @@ module core_top
         .rd_late          ( po_rd_late   ),
         .ovl_mode         ( po_ovl_mode  ),
         .freeze           ( po_freeze    ),
+        .probe_page       ( po_probe_page ),
+        .raw_video        ( po_raw_video ),
         .pad_raw          ( po_pad_raw   ),
         .dl_active        ( ioctl_download ),
         .dl_addr          ( dl_addr      ),

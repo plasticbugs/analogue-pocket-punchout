@@ -27,6 +27,8 @@ module punchout_core (
     input  wire         reset,
     input  wire         rd_late,         // SDRAM read capture point; 1 is correct
     input  wire   [1:0] ovl_mode,        // 0 off, 1 status, 2 faults (freezes on one), 3 black probe (freezes on a hit)
+    input  wire   [1:0] probe_page,      // which 16 bits of the probe record the overlay shows
+    input  wire         raw_video,       // show palette indices instead of colours
     input  wire         freeze,          // hold both CPUs; the video keeps rendering
     input  wire   [7:0] pad_raw,         // raw pad bits for the inputs overlay
 
@@ -225,10 +227,28 @@ module punchout_core (
     // ---- diagnostic overlay: eight squares, two bits each
     //      0 grey = not applicable, 1 green = good, 2 red = bad, 3 yellow = busy
     function automatic [1:0] rg(input bad); rg = bad ? 2'd2 : 2'd1; endfunction
-    function automatic [1:0] pb(input bit1); pb = !probe_out[18] ? 2'd0 : bit1 ? 2'd2 : 2'd1; endfunction
-    wire [18:0] probe_out;
-    wire [15:0] ovl_stat2 = { pb(probe_out[7]), pb(probe_out[6]), pb(probe_out[5]), pb(probe_out[4]),
-                              pb(probe_out[3]), pb(probe_out[2]), pb(probe_out[1]), pb(probe_out[0]) };
+    wire [63:0] probe_rec;
+    wire [15:0] probe_cnt;
+    wire        pv = probe_rec[63];
+    function automatic [1:0] pb(input v, input bit1); pb = !v ? 2'd0 : bit1 ? 2'd2 : 2'd1; endfunction
+    function automatic [15:0] pbyte(input v, input [7:0] b);
+        pbyte = { pb(v, b[7]), pb(v, b[6]), pb(v, b[5]), pb(v, b[4]), pb(v, b[3]), pb(v, b[2]), pb(v, b[1]), pb(v, b[0]) };
+    endfunction
+    wire [1:0] wr_sq = !pv ? 2'd0 : (probe_rec[62:61] == 2'd0) ? 2'd1 : (probe_rec[62:61] == 2'd1) ? 2'd2 : 2'd3;
+    logic [15:0] pg_hi, pg_lo;    // upper row, lower row
+    always_comb begin
+        case (probe_page)
+            2'd0: begin pg_hi = pbyte(pv, probe_rec[52:45]);
+                        pg_lo = { pb(pv, probe_rec[60]), pb(pv, probe_rec[59]), pb(pv, probe_rec[58]),
+                                  pb(pv, probe_rec[57]), pb(pv, probe_rec[56]), pb(pv, probe_rec[55]),
+                                  pb(pv, probe_rec[54]), wr_sq }; end
+            2'd1: begin pg_hi = pbyte(pv, probe_rec[44:37]); pg_lo = pbyte(pv, probe_rec[36:29]); end
+            2'd2: begin pg_hi = pbyte(pv, probe_rec[28:21]);
+                        pg_lo = pbyte(pv, { probe_rec[20:17], probe_rec[4:1] }); end
+            default: begin pg_hi = pbyte(1'b1, probe_cnt[7:0]); pg_lo = pbyte(1'b1, probe_cnt[15:8]); end
+        endcase
+    end
+    wire [15:0] ovl_stat2 = pg_hi;
     logic [15:0] ovl_stat;
     always_comb begin
         case (ovl_mode)
@@ -240,16 +260,16 @@ module punchout_core (
             //                 4 load overflow 5 black probe 6 rom 7 pattern
             2'd2: ovl_stat = { rg(sticky[7]), rg(sticky[6]), rg(sticky[8]), rg(sticky[4]),
                                rg(sticky[3]), rg(sticky[2]), rg(sticky[1]), rg(sticky[0]) };
-            // black probe, lower row, left to right: 0 the pass that wrote
-            // the pixel (green background, red sprite 1, yellow sprite 2),
-            // then bits 1..7 of the attribute byte that pass used (red = 1,
-            // green = 0): bits 2..6 are the colour, bit 7 the x flip. The
-            // upper row is the pixel's palette index, bit 0 at the left.
-            // All grey until a hit.
-            2'd3: ovl_stat = { pb(probe_out[15]), pb(probe_out[14]), pb(probe_out[13]), pb(probe_out[12]),
-                               pb(probe_out[11]), pb(probe_out[10]), pb(probe_out[9]),
-                               !probe_out[18] ? 2'd0 : (probe_out[17:16] == 2'd0) ? 2'd1
-                                              : (probe_out[17:16] == 2'd1) ? 2'd2 : 2'd3 };
+            // black probe: two rows of eight, bit 0 at the left, red = 1,
+            // green = 0, grey until a hit. Which 16 bits depends on the page:
+            //   0  upper: palette index          lower: writer (green bg, red
+            //      sprite 1, yellow sprite 2) then attribute bits 1-7
+            //   1  upper: fight x                lower: fight line
+            //   2  upper: fight PROM R, G nibbles  lower: B nibble, bank bits
+            //      1 and 0, top-monitor flag, line-buffer select
+            //   3  black pixels in the window in the last frame, low byte on
+            //      the upper row -- live, not latched
+            2'd3: ovl_stat = pg_lo;
             default: ovl_stat = '0;
         endcase
     end
@@ -280,7 +300,8 @@ module punchout_core (
         .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
         .dbg_f_overrun(f_overrun), .dbg_f_bg_short(f_bg_short),
         .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall),
-        .probe_clr(ovl_mode != ovl_mode_d), .dbg_f_black(f_black), .probe_out(probe_out));
+        .probe_clr(ovl_mode != ovl_mode_d), .raw_video(raw_video), .dbg_f_black(f_black),
+        .probe_rec(probe_rec), .probe_cnt(probe_cnt));
 
     // ---- sticky faults, cleared on reset or when the overlay mode changes.
     //      In Faults mode a fault also freezes the CPUs, so the frame it
