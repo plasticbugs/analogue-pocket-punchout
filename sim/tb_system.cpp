@@ -20,6 +20,45 @@ static Vtb_system_top *dut;
 static vluint64_t main_time = 0;
 double sc_time_stamp() { return main_time; }
 
+// The video snapshot (punchout_video: the copier and its write-through).
+// After every walk, once the write-through pipeline has drained, every shadow
+// array must equal its live one -- unless the CPU wrote video RAM in the last
+// few clocks, in which case the live copy is legitimately newer and the check
+// is skipped for that frame.
+static long cp_walks = 0, cp_walks_with_wr = 0, cp_wr_in_walk = 0, cp_wt = 0, cp_checked = 0, cp_bad = 0;
+#define V(sig) (r->tb_system_top__DOT__u_core__DOT__u_video__DOT__##sig)
+#define LANE(n, live, shadow) (r->tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__##n##__KET____DOT__##live##__DOT__mem[i] != \
+                              r->tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__##n##__KET____DOT__##shadow##__DOT__mem[i])
+template <class R> static void snapshot_check(R *r) {
+    static int since_wr = 1000, since_done = 1000;
+    static bool wr_this_walk = false;
+    if (V(cp_wr_now)) since_wr = 0; else since_wr++;
+    if (V(cp_walking) && V(cp_wr_now)) { cp_wr_in_walk++; wr_this_walk = true; }
+    if (V(wt_s3)) cp_wt++;
+    if (V(cp_done)) { cp_walks++; since_done = 0; if (wr_this_walk) cp_walks_with_wr++; wr_this_walk = false; }
+    else since_done++;
+    if (since_done != 8 || since_wr < 12) return;
+    long bad = 0;
+    for (int i = 0; i < 1024; i++) {
+        if (V(u_bgt0__DOT__mem)[i] != V(u_sbgt0__DOT__mem)[i]) bad++;
+        if (V(u_bgt1__DOT__mem)[i] != V(u_sbgt1__DOT__mem)[i]) bad++;
+    }
+    for (int i = 0; i < 2048; i++) {
+        if (V(u_bgb0__DOT__mem)[i] != V(u_sbgb0__DOT__mem)[i]) bad++;
+        if (V(u_bgb1__DOT__mem)[i] != V(u_sbgb1__DOT__mem)[i]) bad++;
+    }
+    for (int i = 0; i < 512; i++) {
+        if (LANE(0, u_s1, u_ss1)) bad++; if (LANE(1, u_s1, u_ss1)) bad++;
+        if (LANE(2, u_s1, u_ss1)) bad++; if (LANE(3, u_s1, u_ss1)) bad++;
+        if (LANE(0, u_s2, u_ss2)) bad++; if (LANE(1, u_s2, u_ss2)) bad++;
+        if (LANE(2, u_s2, u_ss2)) bad++; if (LANE(3, u_s2, u_ss2)) bad++;
+    }
+    cp_checked++;
+    if (bad) { cp_bad++; if (cp_bad <= 3) printf("  snapshot %ld: %ld shadow entries differ from live\n", cp_walks, bad); }
+}
+#undef V
+#undef LANE
+
 static void tick() {
     dut->clk = 0; dut->eval();
     dut->clk = 1; dut->eval();
@@ -165,6 +204,7 @@ int main(int argc, char **argv) {
             wr_hist[v / 12]++;
         }
         prev_wr = dut->dbg_ctrl_wr;
+        snapshot_check(dut->rootp);
         if (dut->vblank_rise) {
             frame++;
             if (next < want.size() && frame == want[next]) {
@@ -286,6 +326,10 @@ int main(int argc, char **argv) {
         }
         prev_ce = ce;
     }
+    printf("snapshot walks %ld: CPU wrote video RAM during %ld of them (%ld writes, %ld written through); "
+           "%ld shadows checked against live, %ld mismatched\n",
+           cp_walks, cp_walks_with_wr, cp_wr_in_walk, cp_wt, cp_checked, cp_bad);
+    if (cp_bad) failures++;
     if (getenv("PO_WRHIST")) {
         printf("sprite-control writes by raster row (active rows are 20..691, "
                "vblank 692..713 and 0..19):\n");

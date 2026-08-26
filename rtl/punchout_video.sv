@@ -74,11 +74,9 @@ module punchout_video (
     output logic  [7:0] vid_g,
     output logic  [7:0] vid_b,
 
-    //! ---- one clk pulse at the start of vertical blanking (frame counting)
+    //! ---- one clk pulse at the start of vertical blanking: frame counting,
+    //!      and both CPUs' NMIs, as on the board
     output logic        vblank_rise,
-    //! ---- and one a little later, once the frame's video state has been
-    //!      snapshotted: THIS is what drives both CPUs' NMIs
-    output logic        vblank_nmi,
 
     //! ---- diagnostics
     output logic        dbg_line_overrun, // a line renderer ran past its row
@@ -160,20 +158,33 @@ module punchout_video (
     // (METHODOLOGY 5.5). Separate lanes also let the renderer read a whole tile
     // entry in a single cycle.
     //
-    // Two copies of everything. The CPU reads and writes the LIVE copy. At the
-    // start of every vertical blank the live copy is snapshotted into the
-    // SHADOW copy -- 2048 clocks, all lanes in parallel -- and the renderer
-    // draws the next frame from the shadow alone. The NMI is not delivered to
-    // the CPUs until the snapshot is done, so the handler cannot race it.
+    // Two copies of everything. The CPU reads and writes the LIVE copy. Near
+    // the END of every vertical blank -- row 17 of the 20-row back porch,
+    // after the game's NMI handler has long finished its writing and two rows
+    // before line 0 is rendered -- the live copy is snapshotted into the
+    // SHADOW copy, 2048 clocks with all lanes in parallel, and the renderer
+    // draws the whole frame from the shadow alone.
     //
-    // That is exactly MAME's model: it draws each frame from the state at the
-    // end of the previous one. It is also the only arrangement that cannot
-    // tear. The board reads its RAM as the beam scans, which is fine with a
-    // 2 ms vertical blank for the game to do its writing in; this raster has
-    // 1 ms of blanking and draws the two monitors one after the other, so a
-    // write that the board would hide lands in the middle of a displayed
-    // frame here. Reading live was tried; a black band flashed across the
-    // opponent whenever the game redrew his face while he gloated.
+    // The board reads its RAM as the beam scans, which is fine with a 2 ms
+    // vertical blank for the game to do its writing in; this raster has 1 ms
+    // of blanking and draws the two monitors one after the other, so a write
+    // that lands after the board's beam has passed can land in the middle of
+    // a displayed row here. With the snapshot nothing the CPU does during
+    // the active frame can reach the picture until the next blanking.
+    //
+    // Why the end of blanking and not the start: the handler's writes must be
+    // in THIS frame's picture, as they are on the board. Snapshotting first and
+    // delaying the NMI until it was done drew a clean frame one frame late --
+    // frame 150 of the attract bench came out identical to MAME's 148 -- and a
+    // reaction game cannot afford a frame of lag.
+    //
+    // A write the CPU makes while the copier is walking the array is delayed
+    // three clocks and written into the shadow as well. That is later than the
+    // copier's own write of any entry it may already have passed, so the
+    // shadow ends the walk holding the newest value of every entry, whichever
+    // side of the walk pointer the write fell on. The write-through uses the
+    // renderer's port of the shadow, which is idle: the renderer only runs for
+    // rows that will be displayed.
     // =========================================================================
     wire vsel_top = (cpu_vaddr[15:11] == 5'b11011); // d800-dfff
     wire vsel_spr = (cpu_vaddr[15:12] == 4'b1110);  // e000-efff
@@ -190,28 +201,58 @@ module punchout_video (
     logic  [7:0] s1_cq [0:3];
     logic  [7:0] s2_cq [0:3];
 
-    // ---- the snapshot copier: walks every entry during the first 2048
-    //      clocks of vertical blanking
+    // ---- the snapshot copier: walks every entry during row 17 of the back
+    //      porch (a row is 2240 clocks; the walk is 2048 plus two of latency)
+    wire         row_start;
+    wire         cp_start = row_start && (vcnt == V_BPORCH - 10'd3);
     logic [11:0] cp_addr;             // bit 11 = running
     wire         cp_run  = cp_addr[11];
     wire  [10:0] cp_a    = cp_addr[10:0];
     logic [10:0] cp_wa;               // the address whose data is on the live ports now
     logic        cp_we;
+    logic        cp_done /* verilator public_flat_rd */;   // one clock, after the last entry is read
     always_ff @(posedge clk) begin
         if (reset) begin
-            cp_addr <= '0; cp_we <= 1'b0; cp_wa <= '0; vblank_nmi <= 1'b0;
+            cp_addr <= '0; cp_we <= 1'b0; cp_wa <= '0; cp_done <= 1'b0;
         end else begin
-            vblank_nmi <= 1'b0;
-            cp_we <= cp_run;
-            cp_wa <= cp_a;
-            if (vblank_rise)              cp_addr <= 12'h800;
-            else if (cp_run) begin
-                if (cp_a == 11'h7ff) begin
-                    cp_addr    <= '0;
-                    vblank_nmi <= 1'b1;   // snapshot complete: now the game may run its handler
-                end else cp_addr <= cp_addr + 12'd1;
-            end
+            cp_we   <= cp_run;
+            cp_wa   <= cp_a;
+            cp_done <= cp_run && (cp_a == 11'h7ff);
+            if (cp_start)                 cp_addr <= 12'h800;
+            else if (cp_run)              cp_addr <= (cp_a == 11'h7ff) ? 12'h000 : cp_addr + 12'd1;
         end
+    end
+
+    // ---- write-through: a CPU write during the walk, three clocks later, into
+    //      the shadow. {top code, top attr, bot code, bot attr, spr1 x4, spr2 x4}
+    wire [11:0] wt_sel = {
+        cpu_vwe && vsel_top && !cpu_vaddr[0], cpu_vwe && vsel_top &&  cpu_vaddr[0],
+        cpu_vwe && vsel_bot && !cpu_vaddr[0], cpu_vwe && vsel_bot &&  cpu_vaddr[0],
+        cpu_vwe && vsel_spr && !spr_hi && (cpu_vaddr[1:0] == 2'd0),
+        cpu_vwe && vsel_spr && !spr_hi && (cpu_vaddr[1:0] == 2'd1),
+        cpu_vwe && vsel_spr && !spr_hi && (cpu_vaddr[1:0] == 2'd2),
+        cpu_vwe && vsel_spr && !spr_hi && (cpu_vaddr[1:0] == 2'd3),
+        cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == 2'd0),
+        cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == 2'd1),
+        cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == 2'd2),
+        cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == 2'd3)};
+    logic [11:0] wt_s1, wt_s2;
+    logic [11:0] wt_s3 /* verilator public_flat_rd */;
+    // for the bench: a CPU write to any video RAM this clock, and the walk
+    wire         cp_wr_now  /* verilator public_flat_rd */ = |wt_sel;
+    wire         cp_walking /* verilator public_flat_rd */ = cp_run;
+    logic [10:0] wt_a1, wt_a2, wt_a3;
+    logic  [7:0] wt_d1, wt_d2, wt_d3;
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            wt_s1 <= '0; wt_s2 <= '0; wt_s3 <= '0;
+        end else begin
+            wt_s1 <= cp_run ? wt_sel : 12'd0;
+            wt_s2 <= wt_s1;
+            wt_s3 <= wt_s2;
+        end
+        wt_a1 <= cpu_vaddr[11:1]; wt_a2 <= wt_a1; wt_a3 <= wt_a2;
+        wt_d1 <= cpu_vdin;        wt_d2 <= wt_d1; wt_d3 <= wt_d2;
     end
 
     // live copies: port A the CPU, port B the copier
@@ -236,15 +277,21 @@ module punchout_video (
         .a_d(cpu_vdin), .a_q(bgb_q1),
         .b_addr(cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l1));
 
-    // shadow copies: written by the copier, read by the renderer
-    po_spram_dp #(.AW(10), .DW(8)) u_sbgt0 (.clk(clk),
-        .wa(cp_wa[9:0]), .we(cp_we && !cp_wa[10]), .d(bgt_l0), .ra(bgt_ridx), .q(bgt_code));
-    po_spram_dp #(.AW(10), .DW(8)) u_sbgt1 (.clk(clk),
-        .wa(cp_wa[9:0]), .we(cp_we && !cp_wa[10]), .d(bgt_l1), .ra(bgt_ridx), .q(bgt_attr));
-    po_spram_dp #(.AW(11), .DW(8)) u_sbgb0 (.clk(clk),
-        .wa(cp_wa), .we(cp_we), .d(bgb_l0), .ra(bgb_ridx), .q(bgb_code));
-    po_spram_dp #(.AW(11), .DW(8)) u_sbgb1 (.clk(clk),
-        .wa(cp_wa), .we(cp_we), .d(bgb_l1), .ra(bgb_ridx), .q(bgb_attr));
+    // shadow copies: port A the copier; port B the renderer, and the
+    // write-through while the renderer is idle
+    /* verilator lint_off PINCONNECTEMPTY */
+    po_dpram #(.AW(10), .DW(8)) u_sbgt0 (.clk(clk),
+        .a_addr(cp_wa[9:0]), .a_we(cp_we && !cp_wa[10]), .a_d(bgt_l0), .a_q(),
+        .b_addr(wt_s3[11] ? wt_a3[9:0] : bgt_ridx), .b_we(wt_s3[11]), .b_d(wt_d3), .b_q(bgt_code));
+    po_dpram #(.AW(10), .DW(8)) u_sbgt1 (.clk(clk),
+        .a_addr(cp_wa[9:0]), .a_we(cp_we && !cp_wa[10]), .a_d(bgt_l1), .a_q(),
+        .b_addr(wt_s3[10] ? wt_a3[9:0] : bgt_ridx), .b_we(wt_s3[10]), .b_d(wt_d3), .b_q(bgt_attr));
+    po_dpram #(.AW(11), .DW(8)) u_sbgb0 (.clk(clk),
+        .a_addr(cp_wa), .a_we(cp_we), .a_d(bgb_l0), .a_q(),
+        .b_addr(wt_s3[9] ? wt_a3 : bgb_ridx), .b_we(wt_s3[9]), .b_d(wt_d3), .b_q(bgb_code));
+    po_dpram #(.AW(11), .DW(8)) u_sbgb1 (.clk(clk),
+        .a_addr(cp_wa), .a_we(cp_we), .a_d(bgb_l1), .a_q(),
+        .b_addr(wt_s3[8] ? wt_a3 : bgb_ridx), .b_we(wt_s3[8]), .b_d(wt_d3), .b_q(bgb_attr));
 
     generate
         genvar lane;
@@ -259,14 +306,17 @@ module punchout_video (
                 .a_we(cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == lane[1:0])),
                 .a_d(cpu_vdin), .a_q(s2_cq[lane]),
                 .b_addr(cp_a[8:0]), .b_we(1'b0), .b_d(8'h00), .b_q(s2_l[lane]));
-            po_spram_dp #(.AW(9), .DW(8)) u_ss1 (.clk(clk),
-                .wa(cp_wa[8:0]), .we(cp_we && (cp_wa[10:9] == 2'b00)), .d(s1_l[lane]),
-                .ra(s1_ridx), .q(s1_b[lane]));
-            po_spram_dp #(.AW(9), .DW(8)) u_ss2 (.clk(clk),
-                .wa(cp_wa[8:0]), .we(cp_we && (cp_wa[10:9] == 2'b00)), .d(s2_l[lane]),
-                .ra(s2_ridx), .q(s2_b[lane]));
+            po_dpram #(.AW(9), .DW(8)) u_ss1 (.clk(clk),
+                .a_addr(cp_wa[8:0]), .a_we(cp_we && (cp_wa[10:9] == 2'b00)), .a_d(s1_l[lane]), .a_q(),
+                .b_addr(wt_s3[7-lane] ? wt_a3[9:1] : s1_ridx), .b_we(wt_s3[7-lane]), .b_d(wt_d3),
+                .b_q(s1_b[lane]));
+            po_dpram #(.AW(9), .DW(8)) u_ss2 (.clk(clk),
+                .a_addr(cp_wa[8:0]), .a_we(cp_we && (cp_wa[10:9] == 2'b00)), .a_d(s2_l[lane]), .a_q(),
+                .b_addr(wt_s3[3-lane] ? wt_a3[9:1] : s2_ridx), .b_we(wt_s3[3-lane]), .b_d(wt_d3),
+                .b_q(s2_b[lane]));
         end
     endgenerate
+    /* verilator lint_on PINCONNECTEMPTY */
 
     // CPU read-back, one cycle behind the address, same as the memories.
     logic [1:0] cq_lane;
@@ -358,7 +408,7 @@ module punchout_video (
         if (reset) begin
             spr1_snap <= '0; spr2_snap <= '0; palbank_l <= '0;
             for (si = 0; si < 32; si++) rowscroll[si] <= 9'd58;
-        end else if (vblank_rise) begin
+        end else if (cp_done) begin   // the same instant as the tilemap snapshot
             spr1_snap <= spr1_ctrl;
             spr2_snap <= spr2_ctrl;
             palbank_l <= palettebank;
@@ -525,7 +575,13 @@ module punchout_video (
     logic [7:0] lb0_q, lb1_q;
 
 
-    wire row_start = (hcnt == 10'd0) && ce_pix;
+    assign row_start = (hcnt == 10'd0) && ce_pix;
+    // Render only rows that will be shown: row 0 during back-porch row 19,
+    // each later row during the one before it. The renderer used to run for
+    // every row, blanking included, filling a line buffer nobody displayed;
+    // now the shadow RAM's read port is free during blanking for the
+    // snapshot's write-through.
+    wire rend_en  = (vcnt >= V_BPORCH - 10'd1) && (vcnt < V_BPORCH + V_ACTIVE - 10'd1);
 
     typedef enum logic [4:0] {
         R_IDLE, R_SETUP,
@@ -633,7 +689,7 @@ module punchout_video (
                 if (sd_cyc == 8'd96) dbg_f_sd_stall <= 1'b1;
             end else sd_cyc <= '0;
 
-            if (row_start) begin
+            if (row_start && rend_en) begin
                 if (rs != R_IDLE) dbg_line_overrun <= 1'b1;
                 if (rs != R_IDLE) dbg_f_overrun <= 1'b1;
                 if (rs == R_SETUP || rs == R_BG_INIT || rs == R_BG_A || rs == R_BG_B

@@ -244,6 +244,25 @@ approximation at the cost of a frame of latency in a reaction game.
 `sim/run_system.sh` therefore compares each captured frame against MAME's frame
 *N* and frame *N-1* and passes if either is identical, and says which.
 
+### The tilemap snapshot
+
+The tilemaps and sprite RAM are snapshotted the same way: the CPU writes a live
+copy, and near the end of vertical blanking (back-porch row 17, two rows before
+line 0 is rendered) a copier walks all 2048 entries into a shadow copy that the
+renderer alone reads. A write the CPU makes during the walk is also written
+into the shadow three clocks later, after the copier's own write of that entry,
+so the shadow always ends the walk holding the newest value. The system bench
+checks this: after every walk it compares each shadow array with its live one
+(`snapshot walks 151: ... 39 writes, 39 written through; 151 shadows checked
+against live, 0 mismatched`).
+
+The first version snapshotted at the *start* of blanking and held the NMI back
+until the copy was done. Every frozen state still matched, but the animated
+attract frame came out identical to MAME's frame **148** instead of 149: a clean
+picture, one frame late, because the handler's writes for a frame were not drawn
+until the next one. The bench's *N* / *N-1* rule caught it. Snapshotting after
+the handler has run restored the phase the live design had, at no latency cost.
+
 ## Synthesis and timing — CLOSED
 
 `./build-local.sh map` (Quartus 18.1 in Docker) runs analysis and synthesis in

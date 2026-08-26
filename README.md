@@ -59,10 +59,11 @@ Synthesis closes on the real part: 25% of the logic, 28% of the block RAM, and
 
 Working and verified:
 
-* Both monitors, pixel-identical to MAME across sixteen frozen machine states —
+* Both monitors, pixel-identical to MAME across 52 frozen machine states —
   both background tilemaps with per-row scrolling, the zooming opponent, the
   player, both palette banks, both flips and the full range of zoom the game
-  reaches.
+  reaches. The video state is snapshotted once per frame at the end of vertical
+  blanking, so nothing the game writes mid-frame can tear the picture.
 * Z80 main board with the full memory map, I/O, the 74LS259 latch and the
   vblank NMI — booted from reset in simulation and held to MAME frame for frame
   through attract mode.
