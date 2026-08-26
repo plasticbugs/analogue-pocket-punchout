@@ -213,7 +213,12 @@ module punchout_core (
         .din(sd_din_mux), .we(sd_we_mux), .rd(sd_rd_mux), .ready(sd_ready));
 
     // The machine stays in reset until the image has landed and been checked.
-    wire mach_reset = reset || loading || tst_busy;
+    // Registered: `loading` carries the queue's 9-bit pointer compare, and as
+    // a combinational reset it fanned that compare into every synchronous
+    // reset in the machine -- the worst path in the design ran from the read
+    // pointer into an APU register. A clock of latency on a reset is free.
+    logic mach_reset;
+    always_ff @(posedge clk) mach_reset <= reset || loading || tst_busy;
 
     // ---- diagnostic overlay: eight squares, two bits each
     //      0 grey = not applicable, 1 green = good, 2 red = bad, 3 yellow = busy
