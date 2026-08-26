@@ -180,10 +180,17 @@ module punchout_core (
         .sd_addr(tst_addr), .sd_din(tst_din), .sd_we(tst_we), .sd_rd(tst_rd),
         .sd_dout16(sd_dout16), .sd_ready(sd_ready));
 
-    wire [24:0] sd_addr_mux = loading  ? sd_addr  : tst_busy ? tst_addr : vid_sd_addr;
-    wire  [7:0] sd_din_mux  = loading  ? sd_din   : tst_din;
-    wire        sd_we_mux   = loading  ? sd_we    : tst_we;
-    wire        sd_rd_mux   = loading  ? 1'b0     : tst_busy ? tst_rd : vid_sd_rd;
+    // The bus select is registered: `loading` includes a 9-bit pointer compare,
+    // and straight into the address mux and the controller's registered
+    // address it was the last path short of 96 MHz. A cycle late is harmless
+    // here -- the loader's own strobe is a cycle behind the queue state
+    // anyway, and reads simply start a clock later once loading ends.
+    logic loading_r;
+    always_ff @(posedge clk) loading_r <= loading;
+    wire [24:0] sd_addr_mux = loading_r ? sd_addr  : tst_busy ? tst_addr : vid_sd_addr;
+    wire  [7:0] sd_din_mux  = loading_r ? sd_din   : tst_din;
+    wire        sd_we_mux   = loading_r ? sd_we    : tst_we;
+    wire        sd_rd_mux   = loading_r ? 1'b0     : tst_busy ? tst_rd : vid_sd_rd;
 
     sdram16 u_sdram (
         .init(reset), .clk(clk), .clk_pin(clk_sdram), .rd_late(rd_late),

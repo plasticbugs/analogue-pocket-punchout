@@ -93,7 +93,11 @@ set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[*]
 # 3.3 ns capture window slid from +2.57/+0.77 to -0.19/+3.6. The SDRAM phase is
 # derived for a fixed pin-to-register delay; pinning it here is what makes that
 # derivation hold from one build to the next, CI included.
-set_instance_assignment -name PAD_TO_INPUT_REGISTER_DELAY 0 -to dram_dq[*]
+# (Cyclone V names these by delay-chain element: D1 is pad to input register,
+# D3 input register to core. The fit report's Delay Chain Summary showed the
+# fitter setting D1 to anything from 1 to 10 units per data pin.)
+set_instance_assignment -name D1_DELAY 0 -to dram_dq[*]
+set_instance_assignment -name D3_DELAY 0 -to dram_dq[*]
 
 set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:../platform/pocket/scripts/pre_flow.tcl"
 set_global_assignment -name POST_FLOW_SCRIPT_FILE "quartus_sh:../platform/pocket/scripts/post_flow.tcl"
