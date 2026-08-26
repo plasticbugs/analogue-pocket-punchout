@@ -42,15 +42,15 @@ PROMs, all the video RAM — is block RAM and single cycle.
 | Pocket | Arcade |
 |---|---|
 | D-pad | 4-way stick — dodge left/right, duck, block |
-| B, or L | Left punch |
-| A, or R | Right punch |
-| Y, or X | KO punch |
+| Y, or L | Left punch |
+| X, or R | Right punch |
+| B or A | KO punch |
 | Select | Coin |
 | Start | Coin |
 
 There is no start button on this machine: inserting a coin begins play, so both
-Select and Start are wired to the coin slot. The two punches appear on both the
-face buttons and the shoulders so either hand position works.
+Select and Start are wired to the coin slot. Top row is the two jabs, bottom row
+the KO; the shoulders mirror the jabs so either hand position works.
 
 ## What is and is not implemented
 

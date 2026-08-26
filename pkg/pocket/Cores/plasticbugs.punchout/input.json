@@ -6,42 +6,42 @@
                 "type": "default",
                 "mappings": [
                     {
-                        "id": 70,
-                        "name": "Left Punch",
+                        "id": 80,
+                        "name": "KO Punch",
                         "key": "pad_btn_b"
                     },
                     {
-                        "id": 71,
-                        "name": "Right Punch",
+                        "id": 81,
+                        "name": "KO Punch (alt)",
                         "key": "pad_btn_a"
                     },
                     {
-                        "id": 72,
-                        "name": "KO Punch",
+                        "id": 82,
+                        "name": "Right Punch",
+                        "key": "pad_btn_x"
+                    },
+                    {
+                        "id": 83,
+                        "name": "Left Punch",
                         "key": "pad_btn_y"
                     },
                     {
-                        "id": 73,
+                        "id": 84,
                         "name": "Left Punch (alt)",
                         "key": "pad_trig_l"
                     },
                     {
-                        "id": 74,
+                        "id": 85,
                         "name": "Right Punch (alt)",
                         "key": "pad_trig_r"
                     },
                     {
-                        "id": 75,
-                        "name": "KO Punch (alt)",
-                        "key": "pad_btn_x"
-                    },
-                    {
-                        "id": 76,
+                        "id": 86,
                         "name": "Coin",
                         "key": "pad_btn_select"
                     },
                     {
-                        "id": 77,
+                        "id": 87,
                         "name": "Coin (Start)",
                         "key": "pad_btn_start"
                     }

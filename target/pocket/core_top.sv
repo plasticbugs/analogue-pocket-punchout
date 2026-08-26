@@ -883,16 +883,20 @@ module core_top
     //!   IN0: d0 left punch, d2 right punch, d3 KO punch
     //!   IN1: d0 right, d1 left, d2 up, d3 down, d6 service, d7 coin
     //!
+    //! The platform's joypad module numbers the face buttons Y/X = m_btn1/4
+    //! and B/A = m_btn2/3 (see its port list above) -- NOT B/A first. The
+    //! comments this block inherited from the Time Pilot '84 core said
+    //! otherwise, and the first hardware build had both jabs on the top row
+    //! and the KO where the right punch should have been.
+    //!
+    //! Top row is the two jabs, bottom row the KO, shoulders mirror the jabs.
     //! There is no start button on this machine: a coin begins play, so both
     //! Select and Start are wired to the coin slot.
-    //!
-    //! B and A are the two punches with Y for the KO, and the shoulders mirror
-    //! them, so a player can throw left and right from either hand position.
     wire [7:0] po_in0 = { 4'b0000,
-                          m_btn3 | m_btn6,     // Y or X  -> KO punch
-                          m_btn2 | m_btn5,     // A or R  -> right punch
+                          m_btn2 | m_btn3,     // B or A  -> KO punch
+                          m_btn4 | m_btn6,     // X or R  -> right punch
                           1'b0,
-                          m_btn1 | m_btn4 };   // B or L  -> left punch
+                          m_btn1 | m_btn5 };   // Y or L  -> left punch
 
     wire [7:0] po_in1 = { m_coin1 | m_start1,  // Select or Start -> coin
                           svc_sw,

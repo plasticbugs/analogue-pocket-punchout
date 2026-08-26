@@ -14,9 +14,9 @@ Hardware
 
 Controls
   D-pad     dodge / duck / block
-  B or L    left punch
-  A or R    right punch
-  Y or X    KO punch
+  Y or L    left punch
+  X or R    right punch
+  B or A    KO punch
   Select    coin (a coin starts play;
             Start also inserts one)
 
