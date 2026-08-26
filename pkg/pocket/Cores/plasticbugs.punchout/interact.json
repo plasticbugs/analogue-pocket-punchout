@@ -84,11 +84,11 @@
             "value": "0x00000000"
           },
           {
-            "name": "1: x / line",
+            "name": "1: CPU writes rows 20-22: total / max per frame",
             "value": "0x00000100"
           },
           {
-            "name": "2: code / map addr lo",
+            "name": "2: code / last byte written rows 20-22",
             "value": "0x00000200"
           },
           {

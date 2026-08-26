@@ -37,7 +37,7 @@ WANT="DECLFILENAME UNUSEDSIGNAL UNUSEDPARAM VARHIDDEN PROCASSINIT PROCASSWIRE
 #
 # Nothing in rtl/punchout_*.sv or rtl/po_*.sv is waived. Lint exists to catch
 # mistakes in this core's own code, and it still does.
-FLAGS="-Wall sim/waivers.vlt"
+FLAGS="-Wall -Irtl sim/waivers.vlt"
 for w in $WANT; do
     if verilator --lint-only "-Wno-$w" "$PROBE/lintprobe.v" >/dev/null 2>&1; then
         FLAGS="$FLAGS -Wno-$w"
@@ -62,7 +62,7 @@ verilator --lint-only $FLAGS --top-module punchout_sound \
 echo "--- whole machine ---"
 verilator --lint-only $FLAGS --top-module punchout_core \
     rtl/po_ram.sv rtl/po_romload.sv rtl/sdram16.sv rtl/po_sdram_test.sv rtl/punchout_video.sv \
-    rtl/punchout_main.sv rtl/punchout_sound.sv rtl/punchout_core.sv \
+    rtl/punchout_main.sv rtl/punchout_sound.sv rtl/po_vlm_busy.sv rtl/punchout_core.sv \
     rtl/tv80s_cen.v modules/cpu-tv80/tv80_core.v modules/cpu-tv80/tv80_alu.v \
     modules/cpu-tv80/tv80_mcode.v modules/cpu-tv80/tv80_reg.v \
     modules/sound-apu/apu_savestate_stub.sv modules/sound-apu/apu.sv sim/t65_stub.sv

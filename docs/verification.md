@@ -501,7 +501,42 @@ sprite twice over never once showed in simulation; it will now.
 
 Fourth report: all seven squares green, and the game plays.
 
-### 5. A flashing black bar when the opponent comes in close -- OPEN
+### 5. A flashing black bar when the opponent comes in close -- RESOLVED: the missing VLM5030's BUSY line
+
+**The cause, found after the investigation below and reproduced in MAME:**
+the core had no VLM5030 and told the Z80 the chip was *never busy*. The
+game paces its display cues against the announcer's BUSY line. Before the
+bout it draws the fighter's introduction on the fight screen -- "INTRODUCING
+... IN THE LEFT CORNER ... WEIGHING 112 POUNDS ... FROM PARIS, FRANCE" in
+red on black, and the name GLASS JOE in rows 20-22 -- starts the phrase,
+and while BUSY blinks the name between its blue box and red-on-black
+(attribute 0x1C / 0x2C, every 8 frames) and the VS on the info screen
+between yellow and green (0x24 / 0x18); then it draws the ring over it.
+With BUSY never asserted, a knock-down phrase "finishes" the instant it
+starts and the game's cue sequencer runs that same blink in the middle of
+the gloat, into cells that are now canvas --
+`tools/writetap.lua` with DSW1 bit 4 forced high makes MAME write 0x2C into
+rows 20-22 and 0x24 into the VS at frames 7800-7999, exactly the Pocket's
+bar. Every RAM, port and path probed below was behaving; the Z80 was running
+the game correctly on a wrong input.
+
+The fix, `rtl/po_vlm_busy.sv`, holds BUSY for each phrase's true length --
+from `tools/vlm_durations.py`, which walks the speech ROM's frames the way
+MAME's `vlm5030.cpp` does, scaled by the speed parameter the game latches on
+RST, at the chip's 3579545/440 Hz sample clock. The voice itself is still to
+come; this is its timing. Validation: the full-system bench now plays the
+same losing fight as the MAME script (`PO_LOSE=1`) and is compared at frames
+7956, 8000 and 8100 against MAME's captures of the gloat.
+
+Lessons, recorded because the search was long: (1) "static while frozen"
+was read as "static state" -- the state that mattered was the game's own
+cue timer, which the freeze also stopped; (2) the write counters were armed
+after the writes they were meant to catch, and were trusted; (3) the first
+question should have been *what content is this* -- the tile codes named the
+fighter introduction and MAME's write log dated it, in minutes; (4) an
+unimplemented input is a divergence even when it is silent.
+
+#### The investigation as it happened
 
 With the game playing, one artefact: after a knock-down, as the opponent zooms
 in to gloat, a solid black bar flashes at the left of the fight screen. It

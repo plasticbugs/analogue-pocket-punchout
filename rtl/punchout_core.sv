@@ -234,7 +234,7 @@ module punchout_core (
     wire [15:0] porta_rec;
     wire        cpu_hold;         // assigned with the sticky faults below
     wire [31:0] probe_cnt;
-    wire  [7:0] probe_wr_bot, probe_wr_top;
+    wire  [7:0] probe_wr_bot, probe_wr_top, probe_wr_max, probe_wr_last;
     wire        pv = probe_rec[81];
     function automatic [1:0] pb(input v, input bit1); pb = !v ? 2'd0 : bit1 ? 2'd2 : 2'd1; endfunction
     function automatic [15:0] pbyte(input v, input [7:0] b);
@@ -251,16 +251,19 @@ module punchout_core (
             // bank, [1] top, [0] line-buffer select
             // All of the pixel under the crosshair, refreshed every frame:
             //   0  upper: palette index      lower: writer, attribute bits 1-7
-            //   1  upper: x (fight, or info) lower: line (fight, or info)
-            //   2  upper: code byte          lower: tilemap index bits 7-0
+            //   1  upper: CPU writes into bottom rows 20-22 since arming
+            //      (saturating)   lower: the most such writes in any one
+            //      frame since arming
+            //   2  upper: code byte          lower: the last byte the CPU
+            //      wrote into bottom rows 20-22 since arming
             //   3  the same cell read through the CPU's port of the live RAM
             //      (only while frozen): upper code byte, lower attribute byte
             2'd0: begin pg_hi = pbyte(pv, probe_rec[51:44]);
                         pg_lo = { pb(pv, probe_rec[78]), pb(pv, probe_rec[77]), pb(pv, probe_rec[76]),
                                   pb(pv, probe_rec[75]), pb(pv, probe_rec[74]), pb(pv, probe_rec[73]),
                                   pb(pv, probe_rec[72]), wr_sq }; end
-            2'd1: begin pg_hi = pbyte(pv, probe_rec[43:36]); pg_lo = pbyte(pv, probe_rec[35:28]); end
-            2'd2: begin pg_hi = pbyte(pv, probe_rec[70:63]); pg_lo = pbyte(pv, probe_rec[59:52]); end
+            2'd1: begin pg_hi = pbyte(1'b1, probe_wr_bot); pg_lo = pbyte(1'b1, probe_wr_max); end
+            2'd2: begin pg_hi = pbyte(pv, probe_rec[70:63]); pg_lo = pbyte(1'b1, probe_wr_last); end
             default: begin pg_hi = pbyte(pv && cpu_hold, porta_rec[15:8]);
                            pg_lo = pbyte(pv && cpu_hold, porta_rec[7:0]); end
         endcase
@@ -322,7 +325,8 @@ module punchout_core (
         .cur_move(cur_move), .cur_fast(cur_fast), .rtest(rtest),
         .hijack(cpu_hold && ovl_mode == 2'd3), .porta_rec(porta_rec),
         .probe_rec(probe_rec), .probe_cnt(probe_cnt),
-        .probe_wr_bot(probe_wr_bot), .probe_wr_top(probe_wr_top));
+        .probe_wr_bot(probe_wr_bot), .probe_wr_top(probe_wr_top),
+        .probe_wr_max(probe_wr_max), .probe_wr_last(probe_wr_last));
 
     // ---- sticky faults, cleared on reset or when the overlay mode changes.
     //      In Faults mode a fault also freezes the CPUs, so the frame it
@@ -350,6 +354,14 @@ module punchout_core (
     wire [7:0] soundlatch, soundlatch2, vlm_data;
     wire       soundlatch_wr, soundlatch2_wr, vlm_data_wr;
     wire       snd_reset, vlm_rst, vlm_st, vlm_vcu;
+    wire       vlm_busy;
+
+    // No VLM5030 yet, but its BUSY line is honoured: the game sequences its
+    // display against it (docs/verification.md, "the black bar").
+    po_vlm_busy u_vlm (
+        .clk(clk), .reset(mach_reset),
+        .rst(vlm_rst), .st(vlm_st), .vcu(vlm_vcu), .data(vlm_data),
+        .busy(vlm_busy));
 
     // Both NMIs fire at the start of vertical blanking, as on the board. The
     // video snapshots its state near the END of blanking, after the handlers
@@ -359,7 +371,7 @@ module punchout_core (
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .vblank_rise(vblank_rise),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),
-        .vlm_busy(1'b0),                    // no speech chip yet: never busy
+        .vlm_busy(vlm_busy),
         .cpu_vaddr(cpu_vaddr), .cpu_vdin(cpu_vdin), .cpu_vwe(cpu_vwe), .cpu_vq(cpu_vq),
         .spr1_ctrl(spr1_ctrl), .spr2_ctrl(spr2_ctrl), .palettebank(palettebank),
         .soundlatch(soundlatch), .soundlatch_wr(soundlatch_wr),

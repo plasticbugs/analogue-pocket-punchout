@@ -103,7 +103,7 @@ module tb_video_top (
         .vblank_rise(vblank_rise),
         .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
         .probe_clr(1'b0), .vid_mode(2'd0), .rtest(2'd0), .hijack(1'b0), .porta_rec(), .cur_move(4'd0), .cur_fast(1'b0), .dbg_f_black(), .probe_rec(), .probe_cnt(),
-        .probe_wr_bot(), .probe_wr_top());
+        .probe_wr_bot(), .probe_wr_top(), .probe_wr_max(), .probe_wr_last());
 
 endmodule
 

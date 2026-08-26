@@ -207,6 +207,16 @@ int main(int argc, char **argv) {
         snapshot_check(dut->rootp);
         if (dut->vblank_rise) {
             frame++;
+            // PO_LOSE: the same losing fight tools/dumpstate.lua plays in MAME
+            // -- coin at 200, then one tap of button 1 at 700, 900 and 1100 to
+            // start the round, then stand there and be knocked out.
+            if (getenv("PO_LOSE")) {
+                bool coin = frame >= 200 && frame < 206;
+                bool b1 = (frame >= 700 && frame < 706) || (frame >= 900 && frame < 906)
+                       || (frame >= 1100 && frame < 1106);
+                dut->in1 = coin ? 0x80 : 0x00;      // d7 coin, active high
+                dut->in0 = b1 ? 0x01 : 0x00;        // d0 button 1 (left punch)
+            }
             if (next < want.size() && frame == want[next]) {
                 capturing = true;
                 img.clear();

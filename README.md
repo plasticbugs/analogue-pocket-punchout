@@ -71,8 +71,10 @@ Working and verified:
 
 Not yet:
 
-* **Speech.** The VLM5030 announcer is not implemented. Its control lines are
-  decoded and routed as far as the sound board so adding it is a wiring change.
+* **Speech.** The VLM5030 announcer is not implemented, so the game is silent
+  where he speaks. Its BUSY line *is* modelled, to the chip's timing: the game
+  paces its display cues against it, and without it the pre-bout fighter
+  introduction blinked in the ring during the opponent's gloat.
 * **Persistent records.** The NVRAM works within a session but is not yet saved
   to the SD card.
 * **Audio verified against MAME.** The sound path is built and the clock rates
@@ -104,6 +106,8 @@ ROM=build/punchout.rom ./sim/run_video.sh   # RTL vs reference renderer
 
 ./tools/capture_attract.sh                  # MAME references, no input
 ROM=build/punchout.rom ./sim/run_system.sh  # boot the machine, compare frames
+PO_LOSE=1 SYSREF=<gloat captures> FRAMES="7956 8000 8100" ./sim/run_system.sh  # play the losing fight
+python3 tools/vlm_durations.py build/punchout.rom rtl/po_vlm_phrases.svh   # regenerate the speech-length table
 ```
 
 `docs/hardware.md` is the machine description everything is built from, and

@@ -116,7 +116,11 @@ module punchout_video (
     //! top tilemap, saturating: MAME's game makes none of either through the
     //! knock-down sequence, so a count here is the Pocket's game diverging
     output logic  [7:0] probe_wr_bot,
-    output logic  [7:0] probe_wr_top
+    output logic  [7:0] probe_wr_top,
+    //! ---- write monitor on bottom rows 20-22: the most writes seen in any
+    //!      one frame since arming, and the last byte written there
+    output logic  [7:0] probe_wr_max,
+    output logic  [7:0] probe_wr_last
 );
 
     // =========================================================================
@@ -1067,8 +1071,20 @@ module punchout_video (
     end
     assign probe_rec = {probe_valid, probe_lat};
 
-    // rows 21-22 of the bottom map: byte addresses f000 + (21*64)*2 .. f000 + (23*64)*2 - 1
-    wire wr_bot_hit = cpu_vwe && vsel_bot && (cpu_vaddr[11:7] == 5'd21 || cpu_vaddr[11:7] == 5'd22);
+    // rows 20-22 of the bottom map (row = cpu_vaddr[11:7])
+    wire wr_bot_hit = cpu_vwe && vsel_bot && (cpu_vaddr[11:7] >= 5'd20) && (cpu_vaddr[11:7] <= 5'd22);
+    logic [7:0] wr_frame;
+    always_ff @(posedge clk) begin
+        if (reset || probe_clr) begin
+            wr_frame <= '0; probe_wr_max <= '0; probe_wr_last <= '0;
+        end else begin
+            if (vblank_rise) begin
+                if (wr_frame > probe_wr_max) probe_wr_max <= wr_frame;
+                wr_frame <= '0;
+            end else if (wr_bot_hit && wr_frame != 8'hff) wr_frame <= wr_frame + 8'd1;
+            if (wr_bot_hit) probe_wr_last <= cpu_vdin;
+        end
+    end
     wire wr_top_hit = cpu_vwe && vsel_top && (cpu_vaddr[10:4] != 7'h7f);   // not the control block at dff0+
     always_ff @(posedge clk) begin
         if (reset || probe_clr) begin

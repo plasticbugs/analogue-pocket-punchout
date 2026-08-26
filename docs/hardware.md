@@ -17,7 +17,7 @@ for this core (see §11).
 |---|---|---|---|
 | Zilog Z80 | main CPU | **4.000 MHz** (8 MHz XTAL ÷2) | `Z80(config, m_maincpu, XTAL(8'000'000)/2)` |
 | Ricoh RP2A03 | sound CPU **and** APU | **1.789772 MHz** (`NTSC_APU_CLOCK`) | 21.477272 MHz ÷12 |
-| Sanyo VLM5030 | LPC speech | **3.579545 MHz** (`RP2A03_NTSC_XTAL/6`) | 21.477272 MHz ÷6 |
+| Sanyo VLM5030 | LPC speech | **3.579545 MHz** (`RP2A03_NTSC_XTAL/6`) | 21.477272 MHz ÷6 -- not yet implemented; its BUSY line is modelled (`po_vlm_busy`), because the game sequences display cues against it |
 | — | pixel clock | derived from a 20.16 MHz XTAL; exact raw params **not modelled by MAME** | driver TODO |
 
 Two monitors, both 256×224 at 60 Hz nominal. MAME declares

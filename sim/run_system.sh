@@ -15,14 +15,14 @@ BUILD=${BUILD:-build/sim_system}
 [ -d "$SYSREF" ] || { echo "no $SYSREF - run tools/capture_attract.sh"; exit 2; }
 
 mkdir -p "$BUILD"
-verilator --cc --exe --build -j 0 -O2 \
+verilator --cc --exe --build -j 0 -O2 -Irtl \
     -Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-VARHIDDEN -Wno-PROCASSINIT \
     -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CASEINCOMPLETE -Wno-UNSIGNED \
     -Wno-PINCONNECTEMPTY -Wno-IMPLICITSTATIC -Wno-UNUSEDPARAM -Wno-IMPORTSTAR \
     -Wno-DEFPARAM -Wno-PINMISSING -Wno-SYNCASYNCNET -Wno-MULTIDRIVEN \
     --top-module tb_system_top --Mdir "$BUILD" -o tb_system \
     rtl/po_ram.sv rtl/po_romload.sv rtl/sdram16.sv rtl/po_sdram_test.sv rtl/punchout_video.sv \
-    rtl/punchout_main.sv rtl/punchout_sound.sv rtl/punchout_core.sv \
+    rtl/punchout_main.sv rtl/punchout_sound.sv rtl/po_vlm_busy.sv rtl/punchout_core.sv \
     rtl/tv80s_cen.v modules/cpu-tv80/tv80_core.v modules/cpu-tv80/tv80_alu.v \
     modules/cpu-tv80/tv80_mcode.v modules/cpu-tv80/tv80_reg.v \
     modules/sound-apu/apu_savestate_stub.sv modules/sound-apu/apu.sv \
