@@ -306,19 +306,24 @@ def _blank_bitmap():
     return [array('H', bytes(512)) for _ in range(256)]
 
 
-def render_top(st, roms, maps):
-    """screen_update_punchout_top -> 256x224 RGB bytes."""
+def render_top(st, roms, maps, raw=False):
+    """screen_update_punchout_top -> 256x224 RGB bytes (or raw palette
+    indices when raw=True, which is what the RTL's line buffer holds)."""
     dest = _blank_bitmap()
     pix, _ = maps['top']
     for y in range(CLIP[1], CLIP[3] + 1):      # tilemap scroll is zero
         dest[y][:] = pix[y][:256]
     if st.spr1_ctrl[7] & 1:
         draw_big_sprite(dest, maps, st, 0)
+    if raw:
+        return [[dest[y][x] & 0xff for x in range(256)]
+                for y in range(CLIP[1], CLIP[3] + 1)]
     return _to_rgb(dest, palette_rgb(roms, 'top', (st.palettebank >> 1) & 1), 0x000)
 
 
-def render_bottom(st, roms, maps):
-    """screen_update_punchout_bottom -> 256x224 RGB bytes."""
+def render_bottom(st, roms, maps, raw=False):
+    """screen_update_punchout_bottom -> 256x224 RGB bytes (or raw palette
+    indices when raw=True)."""
     dest = _blank_bitmap()
     pix, _ = maps['bot']
 
@@ -336,6 +341,9 @@ def render_bottom(st, roms, maps):
     if st.spr1_ctrl[7] & 2:
         draw_big_sprite(dest, maps, st, 1)
     draw_bs2(dest, maps, st)
+    if raw:
+        return [[dest[y][x] & 0xff for x in range(256)]
+                for y in range(CLIP[1], CLIP[3] + 1)]
     return _to_rgb(dest, palette_rgb(roms, 'bot', st.palettebank & 1), 0x100)
 
 
