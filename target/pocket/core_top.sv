@@ -949,6 +949,8 @@ module core_top
         .freeze           ( po_freeze    ),
         .probe_page       ( po_probe_page ),
         .vid_mode         ( po_vid_mode  ),
+        .cur_move         ( {m_down, m_up, m_left, m_right} ),
+        .cur_fast         ( m_btn2 | m_btn3 ),   // KO buttons: 8-pixel steps
         .pad_raw          ( po_pad_raw   ),
         .dl_active        ( ioctl_download ),
         .dl_addr          ( dl_addr      ),

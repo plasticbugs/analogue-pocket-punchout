@@ -95,6 +95,10 @@ module punchout_video (
     //!      Cleared by probe_clr.
     input  wire         probe_clr,
     input  wire   [1:0] vid_mode,         // 0 palette, 1 raw index, 2 writer tag, 3 index 7 in white
+    //! ---- the inspector's crosshair: parked on the hit pixel by the probe,
+    //!      then moved with the pad; the record is of the pixel under it
+    input  wire   [3:0] cur_move,         // {down, up, left, right}, sampled once per frame
+    input  wire         cur_fast,         // move 8 instead of 1
     output logic        dbg_f_black,
     output wire  [81:0] probe_rec,        // see the assign at the probe
     output logic [31:0] probe_cnt,        // black pixels in the window per frame, by writer: see below
@@ -970,12 +974,24 @@ module punchout_video (
     wire [3:0] pr4, pg4, pb4;    // the PROM outputs, assigned where they are chosen
     wire [9:0] dl_yb = dl_y - 10'd224;
     wire [7:0] fight_line = dl_yb[8:1];
+    // the crosshair ring: the 8 raster pixels around the cursor, drawn only
+    // once the probe is armed, so the picture is untouched in the other modes
+    wire [9:0] cdx = {1'b0, dl_x[8:0]} - {1'b0, cur_x};
+    wire [9:0] cdy = dl_y - cur_y;
+    wire cur_ring = ovl_en && ((cdx == 10'd1 || cdx == 10'h3ff || cdy == 10'd1 || cdy == 10'h3ff)
+                            && (cdx == 10'd1 || cdx == 10'h3ff || cdx == 10'd0)
+                            && (cdy == 10'd1 || cdy == 10'h3ff || cdy == 10'd0));
     wire probe_hit = ce_pix && dl_show[0] && !dl_top[0]
                   && (dl_y >= PROBE_Y0) && (dl_y <= PROBE_Y1) && (dl_x < PROBE_X1)
                   && (pr4 == 4'hf) && (pg4 == 4'hf) && (pb4 == 4'hf);
     logic        probe_valid;
     logic [80:0] probe_lat;   // exactly the width of the record below: a wider
                               // register zero-extends it and shifts every field
+    // the crosshair, in raster coordinates (act_x 0..511, act_y 0..671)
+    logic  [8:0] cur_x;
+    logic  [9:0] cur_y;
+    wire   [9:0] cur_step = cur_fast ? 10'd8 : 10'd1;
+    wire         at_cursor = ce_pix && (dl_x[8:0] == cur_x) && (dl_y == cur_y);
     logic [13:0] cnt_bg, cnt_s1, cnt_s2, cnt_i7;   // black pixels this frame, by tag
     wire  [3:0] pr4t = prom_q[0][3:0], pg4t = prom_q[1][3:0], pb4t = prom_q[2][3:0];
     always_ff @(posedge clk) begin
@@ -983,8 +999,23 @@ module punchout_video (
         if (reset || probe_clr) begin
             probe_valid <= 1'b0;
             probe_lat   <= '0;
+            cur_x <= 9'd0; cur_y <= 10'd512;   // fight line 144, x 0: where the bar starts
         end else if (probe_hit && !probe_valid) begin
+            // first hit: freeze (via dbg_f_black) and park the crosshair here
             probe_valid <= 1'b1;
+            cur_x <= dl_x[8:0]; cur_y <= dl_y;
+            dbg_f_black <= 1'b1;
+        end else if (vblank_rise) begin
+            // once per frame: the pad moves the crosshair. Fight pixels are 2x2
+            // rasters, so a step of 1 stays on the same fight pixel every
+            // other press; that is fine, the record only changes when it moves
+            if (cur_move[0] && cur_x != 9'd511) cur_x <= cur_x + cur_step[8:0];
+            if (cur_move[1] && cur_x != 9'd0)   cur_x <= cur_x - cur_step[8:0];
+            if (cur_move[2] && cur_y != 10'd0)  cur_y <= cur_y - cur_step;
+            if (cur_move[3] && cur_y != 10'd671) cur_y <= cur_y + cur_step;
+        end
+        // every frame, the record of the pixel under the crosshair
+        if (at_cursor) begin
             probe_lat   <= { dl_tag,                       // [80:52] writer[1:0], attr[7:0], code[7:0], index[10:0]
                              dl_idx,                       // [51:44] palette index
                              dl_x[8:1],                    // [43:36] fight x
@@ -993,7 +1024,6 @@ module punchout_video (
                              pr4t, pg4t, pb4t,             // [15:4]  the info PROM nibbles
                              palbank_l[1:0],               // [3:2]
                              dl_top[0], lb_sel };          // [1:0]
-            dbg_f_black <= 1'b1;
         end
         // black pixels in the window per frame, live, by the pass that wrote
         // them and by whether the index was 7. Reported in units of 64 so a
@@ -1074,6 +1104,8 @@ module punchout_video (
     always_ff @(posedge clk) if (ce_pix) begin
         if (dl_ovl) begin
             {vid_r, vid_g, vid_b} <= ovl_rgb;
+        end else if (cur_ring) begin
+            {vid_r, vid_g, vid_b} <= (dl_x[0] ^ dl_y[0]) ? 24'hFFFFFF : 24'h000000;
         end else if (vid_mode == 2'd1 || (vid_mode == 2'd3 && dl_idx != 8'd7)) begin
             // the palette index as a colour, bypassing the PROMs: R from bits
             // 7-5, G from 4-2, B from 1-0. The canvas (7) comes out blue.

@@ -590,13 +590,12 @@ and squares 1-7 are bits 1-7 of the attribute byte that pass used, red for 1:
 bits 2-6 the colour, bit 7 the x flip. For the canvas the expected byte is
 0x07: squares 1 and 2 red, the rest green. Upper row: the pixel's palette
 index, bit 0 at the left, red for 1. All grey until a hit. That is page 0 of
-**Probe Page**; page 1 is the hit's fight x (upper) and line (lower); page 2
-the tile code byte the pass fetched (upper) and bits 7-0 of the tilemap
-address it read (lower); page 3 upper is that address's bits 10-8 in the
-first three squares then, in five, the CPU writes into bottom rows 21-22
-since the probe was armed (saturating at 31), and lower the CPU writes into
-the top tilemap since arming -- both are zero in MAME through the knock-down
-sequence.
+**Probe Page**, all of the pixel under the crosshair; page 1 is its x
+(upper; on the info screen, info x = 2 x value - 128) and line (lower); page
+2 the tile code byte the pass fetched (upper) and bits 7-0 of the tilemap
+address it read (lower); page 3 upper is that address's bits 10-8, the PROM
+R nibble bit 0 first, and the top-monitor flag; lower the PROM G and B
+nibbles. A black pixel through the PROMs is nibbles F, F, F.
 **Video Path** offers the palette (normal), the raw index (R from bits 7-5, G
 from 4-2, B from 1-0: the canvas is blue), the writer tag (green background,
 red sprite 1, yellow sprite 2) and index 7 in white with the rest raw.
@@ -648,6 +647,29 @@ second place. Next build: the tag carries the code byte and the tilemap
 address the pass used, and two counters of CPU writes MAME never makes here
 (bottom rows 21-22, the top tilemap), to tell a wrong read from a diverged
 game.
+
+**Fourth round** (build b2ded16): first hit again at x 0, line 144, index 7,
+attribute 0x07, background pass; the code byte read **0x92** and the tilemap
+address **1**, which matches no cell of either map, so that tag entry is
+either stale or one square was misread -- the limit of reading single bits
+off a first-hit latch. The CPU-write counters were **0 and 0**: the Pocket's
+game makes no writes MAME's does not, so the game has not diverged and is
+not drawing the bar. The VS on the info screen: MAME shows it **green with a
+purple shadow, unchanged on every consecutive frame** 7900-7915, 8000-8007
+and 8264-8279 (odd frames included -- every earlier capture was an even
+frame), and never a bar. On the Pocket it alternates green / yellow-orange,
+and the bar is present exactly while it is yellow. Yellow-orange is colour
+9's pens in the top PROMs; the VS tiles carry colour 6. And the canvas
+index, 7, looked up in the *top* monitor's PROMs, is black. Two monitors,
+two wrong colours, both consistent with the wrong PROM set or the wrong
+colour for the right tile -- and the bar is only part of its rows, so
+whatever it is acts per cell, not per frame.
+
+The bit-reading probe is replaced by an **inspector**: the hit freezes the
+CPUs and parks a crosshair on the hit pixel; the D-pad then moves it (KO
+button held: 8-pixel steps) and the pages show the record of whatever pixel
+it is on, refreshed every frame -- so the bar, the canvas beside it and the
+VS letters can each be read exactly.
 
 The first probe tested the palette index for 0-3 (colour 0). It fired on the
 credit screen's black tiles, as it should, and **not on the bar** -- so the

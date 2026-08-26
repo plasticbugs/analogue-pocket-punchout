@@ -29,6 +29,8 @@ module punchout_core (
     input  wire   [1:0] ovl_mode,        // 0 off, 1 status, 2 faults (freezes on one), 3 black probe (freezes on a hit)
     input  wire   [1:0] probe_page,      // which 16 bits of the probe record the overlay shows
     input  wire   [1:0] vid_mode,        // 0 palette, 1 raw index, 2 writer tag, 3 index 7 white
+    input  wire   [3:0] cur_move,        // inspector crosshair: {down, up, left, right}, held
+    input  wire         cur_fast,        // ...in steps of 8
     input  wire         freeze,          // hold both CPUs; the video keeps rendering
     input  wire   [7:0] pad_raw,         // raw pad bits for the inputs overlay
 
@@ -244,22 +246,25 @@ module punchout_core (
             // tilemap index, [51:44] palette index, [43:36] x, [35:28] line,
             // [27:16] fight PROM RGB, [15:4] info PROM RGB, [3:2] palette
             // bank, [1] top, [0] line-buffer select
+            // All of the pixel under the crosshair, refreshed every frame:
             //   0  upper: palette index      lower: writer, attribute bits 1-7
-            //   1  upper: fight x            lower: fight line
+            //   1  upper: x (fight, or info) lower: line (fight, or info)
             //   2  upper: code byte          lower: tilemap index bits 7-0
-            //   3  upper: tilemap index bits 10-8, then CPU writes to bottom
-            //      rows 21-22 since arming (5 bits, saturating)
-            //      lower: CPU writes to the top tilemap since arming
+            //   3  upper: tilemap index bits 10-8, PROM R nibble (bit 0
+            //      first), top-monitor flag   lower: PROM G nibble, B nibble
             2'd0: begin pg_hi = pbyte(pv, probe_rec[51:44]);
                         pg_lo = { pb(pv, probe_rec[78]), pb(pv, probe_rec[77]), pb(pv, probe_rec[76]),
                                   pb(pv, probe_rec[75]), pb(pv, probe_rec[74]), pb(pv, probe_rec[73]),
                                   pb(pv, probe_rec[72]), wr_sq }; end
             2'd1: begin pg_hi = pbyte(pv, probe_rec[43:36]); pg_lo = pbyte(pv, probe_rec[35:28]); end
             2'd2: begin pg_hi = pbyte(pv, probe_rec[70:63]); pg_lo = pbyte(pv, probe_rec[59:52]); end
-            default: begin pg_hi = { pb(1'b1, wr_bot_sat[4]), pb(1'b1, wr_bot_sat[3]), pb(1'b1, wr_bot_sat[2]),
-                                     pb(1'b1, wr_bot_sat[1]), pb(1'b1, wr_bot_sat[0]),
+            default: begin pg_hi = { pb(pv, probe_rec[1]),
+                                     pb(pv, probe_rec[27]), pb(pv, probe_rec[26]), pb(pv, probe_rec[25]), pb(pv, probe_rec[24]),
                                      pb(pv, probe_rec[62]), pb(pv, probe_rec[61]), pb(pv, probe_rec[60]) };
-                           pg_lo = pbyte(1'b1, probe_wr_top); end
+                           pg_lo = pbyte(pv, { probe_rec[16], probe_rec[17], probe_rec[18], probe_rec[19],
+                                               probe_rec[20], probe_rec[21], probe_rec[22], probe_rec[23] }); end
+            // (nibbles are shown bit 0 first, like everything else: PROM R is
+            //  rec[27:24] with bit 0 at rec[24]; G rec[23:20], B rec[19:16])
         endcase
     end
     wire [15:0] ovl_stat2 = pg_hi;
@@ -316,6 +321,7 @@ module punchout_core (
         .dbg_f_overrun(f_overrun), .dbg_f_bg_short(f_bg_short),
         .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall),
         .probe_clr(ovl_mode != ovl_mode_d), .vid_mode(vid_mode), .dbg_f_black(f_black),
+        .cur_move(cur_move), .cur_fast(cur_fast),
         .probe_rec(probe_rec), .probe_cnt(probe_cnt),
         .probe_wr_bot(probe_wr_bot), .probe_wr_top(probe_wr_top));
 

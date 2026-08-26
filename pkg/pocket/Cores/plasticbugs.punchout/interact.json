@@ -92,7 +92,7 @@
             "value": "0x00000200"
           },
           {
-            "name": "3: addr hi+CPU wr bot / wr top",
+            "name": "3: addr hi, PROM R, top / G, B",
             "value": "0x00000300"
           }
         ]
