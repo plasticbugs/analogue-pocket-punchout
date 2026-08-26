@@ -26,7 +26,7 @@ module punchout_core (
     input  wire         hw_reset,
     input  wire         reset,
     input  wire         rd_late,         // SDRAM read capture point; 1 is correct
-    input  wire   [1:0] ovl_mode,        // 0 off, 1 status, 2 faults (freezes on one), 3 inputs
+    input  wire   [1:0] ovl_mode,        // 0 off, 1 status, 2 faults (freezes on one), 3 black probe (freezes on a hit)
     input  wire         freeze,          // hold both CPUs; the video keeps rendering
     input  wire   [7:0] pad_raw,         // raw pad bits for the inputs overlay
 
@@ -225,7 +225,8 @@ module punchout_core (
     // ---- diagnostic overlay: eight squares, two bits each
     //      0 grey = not applicable, 1 green = good, 2 red = bad, 3 yellow = busy
     function automatic [1:0] rg(input bad); rg = bad ? 2'd2 : 2'd1; endfunction
-    function automatic [1:0] lit(input on); lit = on ? 2'd3 : 2'd0; endfunction
+    function automatic [1:0] pb(input bit1); pb = !probe_out[10] ? 2'd0 : bit1 ? 2'd2 : 2'd1; endfunction
+    wire [10:0] probe_out;
     logic [15:0] ovl_stat;
     always_comb begin
         case (ovl_mode)
@@ -234,12 +235,17 @@ module punchout_core (
                                dbg_pat_st, dbg_rom_st, rg(dbg_dma_req),
                                rg(dbg_line_overrun), rg(dbg_load_overflow) };
             // faults, sticky: 0 overrun 1 bg short 2 setup late 3 sd stall
-            //                 4 load overflow 5 dma 6 rom 7 pattern
-            2'd2: ovl_stat = { rg(sticky[7]), rg(sticky[6]), rg(sticky[5]), rg(sticky[4]),
+            //                 4 load overflow 5 black probe 6 rom 7 pattern
+            2'd2: ovl_stat = { rg(sticky[7]), rg(sticky[6]), rg(sticky[8]), rg(sticky[4]),
                                rg(sticky[3]), rg(sticky[2]), rg(sticky[1]), rg(sticky[0]) };
-            // inputs, raw: 0 Y 1 X 2 B 3 A 4 L 5 R 6 Select 7 Start
-            2'd3: ovl_stat = { lit(pad_raw[7]), lit(pad_raw[6]), lit(pad_raw[5]), lit(pad_raw[4]),
-                               lit(pad_raw[3]), lit(pad_raw[2]), lit(pad_raw[1]), lit(pad_raw[0]) };
+            // black probe, left to right: 0 the pass that wrote the pixel
+            // (green background, red sprite 1, yellow sprite 2), then bits 1..7
+            // of the attribute byte that pass used (red = 1, green = 0): bits
+            // 2..6 are the colour, bit 7 the x flip. All grey until a hit.
+            2'd3: ovl_stat = { pb(probe_out[7]), pb(probe_out[6]), pb(probe_out[5]), pb(probe_out[4]),
+                               pb(probe_out[3]), pb(probe_out[2]), pb(probe_out[1]),
+                               !probe_out[10] ? 2'd0 : (probe_out[9:8] == 2'd0) ? 2'd1
+                                              : (probe_out[9:8] == 2'd1) ? 2'd2 : 2'd3 };
             default: ovl_stat = '0;
         endcase
     end
@@ -268,22 +274,28 @@ module punchout_core (
         .vblank_rise(vblank_rise),
         .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
         .dbg_f_overrun(f_overrun), .dbg_f_bg_short(f_bg_short),
-        .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall));
+        .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall),
+        .probe_clr(ovl_mode != ovl_mode_d), .dbg_f_black(f_black), .probe_out(probe_out));
 
     // ---- sticky faults, cleared on reset or when the overlay mode changes.
     //      In Faults mode a fault also freezes the CPUs, so the frame it
     //      happened in stays on the screen to be looked at.
-    wire f_overrun, f_bg_short, f_setup_late, f_sd_stall;
-    logic [7:0] sticky;
+    wire f_overrun, f_bg_short, f_setup_late, f_sd_stall, f_black;
+    logic [8:0] sticky;
     logic [1:0] ovl_mode_d;
     always_ff @(posedge clk) begin
         ovl_mode_d <= ovl_mode;
         if (hw_reset || reset || ovl_mode != ovl_mode_d) sticky <= '0;
         else sticky <= sticky | {
-            dbg_pat_st == 2'd2, dbg_rom_st == 2'd2, dbg_dma_req, dbg_load_overflow,
+            f_black, dbg_pat_st == 2'd2, dbg_rom_st == 2'd2, dbg_dma_req, dbg_load_overflow,
             f_sd_stall, f_setup_late, f_bg_short, f_overrun };
     end
-    wire cpu_hold = freeze || ((ovl_mode == 2'd2) && (|sticky));
+    // Faults and Black-probe modes both freeze the CPUs on a hit, so the
+    // frame it happened in stays on the screen. The renderer keeps running
+    // from the frozen state: if the fault is in the render path it stays
+    // visible, if it needed the CPUs moving it goes away -- either answer is
+    // information.
+    wire cpu_hold = freeze || ((ovl_mode == 2'd2 || ovl_mode == 2'd3) && (|sticky));
 
     // =========================================================================
     // Main board

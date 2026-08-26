@@ -101,7 +101,8 @@ module tb_video_top (
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
         .vblank_rise(vblank_rise),
-        .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line));
+        .dbg_line_overrun(dbg_line_overrun), .dbg_worst_line(dbg_worst_line),
+        .probe_clr(1'b0), .dbg_f_black(), .probe_out());
 
 endmodule
 

@@ -501,41 +501,70 @@ sprite twice over never once showed in simulation; it will now.
 
 Fourth report: all seven squares green, and the game plays.
 
-### 5. A flashing black bar when the opponent comes in close
+### 5. A flashing black bar when the opponent comes in close -- OPEN
 
 With the game playing, one artefact: after a knock-down, as the opponent zooms
-in to gloat, a black bar the sprite's width flashed at the left of the fight
-screen, a row above where the Game Over box would later sit.
+in to gloat, a solid black bar flashes at the left of the fight screen. It
+persists on the snapshot design, so it is not the CPU tearing a frame.
 
-Measured in order. Every frozen frame of the zoom sweep rendered pixel-exact
-(`scratchpad/lose`, eleven states, zoom 388 down to 192, X wrapping through
-4096). The Game Over box turned out to slide in by row scroll, two rows at a
-time from opposite sides; seven frozen frames mid-slide -- the first states
-with a non-uniform scroll table -- also rendered pixel-exact in both the
-reference and the RTL. So the bar was dynamic: something that only happens
-between frames.
+What has been established, in order:
 
-What changes between those frames is the seven-byte sprite control block, and
-the renderer latched it once per frame at a single instant (raster row 16).
-The system bench's histogram of where the game writes that block puts 346 of
-361 writes in rows 696-719 -- the two dozen rows after the NMI -- with the
-rest scattered through the active frame. A heavier frame that pushed the
-handler thirty rows later would put the latch in the middle of the writes, and
-a torn block (new Y low byte, old high bit) parks the sprite 256 lines away
-for one frame. The board reads the registers as the beam scans; a torn value
-costs it one scanline.
+* **Where it is.** Measured against the canvas edge in a photograph of the
+  panel: fight-screen lines 143-166, x 0 to about 89. That is background tile
+  rows 20-22 (lines 144-167) exactly, and at those rows' scroll of 191 the
+  right edge x = 89 is exactly the boundary of tile column 35. The opponent's
+  footprint on those lines starts at x = 14 and its tile grid (16 px at that
+  zoom, offset 14) does not line up with either edge. So the bar is background
+  cells: rows 20-22, columns 23-34.
+* **What is in those cells.** Tile 0x3ff, attribute 0x07: the canvas tile
+  (every pen 3) in colour 1, whose four pens are white, blue, navy and tan.
+  Nothing in it can render black. The same tile and attribute fill the whole
+  canvas around them; nothing in the tilemap distinguishes the twelve cells.
+* **The state is static while it flashes.** A MAME write tap over frames
+  7800-8300 of the losing fight shows the sprite RAM, control block, scroll
+  table and those tilemap rows unchanged from frame 8189 (when the Game Over
+  box is built into sprite 2's tilemap, rows 29-31) to 8285 (the wipe to the
+  credit screen). The only video RAM traffic in between is the game's scratch
+  use of tilemap row 31 and a 2x2 animation at row 19-20 columns 9-10. Every
+  frozen state through the sequence -- 29 of the gloat, 7 of this window, 7
+  of the credit-screen slide -- renders pixel-exact in the reference and in
+  the RTL.
+* **The Game Over box is sprite 2**, not a tilemap: the player's big sprite
+  is reused for it once the player is down. It sits at lines 163-186, x
+  89-176, hidden behind the opponent when he is in close.
 
-The renderer now does the same: the sprite geometry is computed at the start
-of every line from the live registers, and the row-scroll table and palette
-bank are read live too. About 80 clocks per line; worst measured line 1603 of
-2240. Every frozen set still passes and attract mode is still identical to
-MAME.
+A black pixel on the fight palette is index 0-3 (colour 0, all four pens) or
+36, 37, 39, 44. For those cells to come out black the background pass must
+have written colour 0 -- or the entry was never written, or it was overwritten
+by a sprite pass with colour 0 -- and only on the hardware, only some frames,
+from a state that does not change. That is a dynamic hardware effect the
+simulator has no model of: block-RAM read behaviour, a timing-marginal path,
+or SDRAM traffic interacting with the line budget.
+
+So the next step is to make the hardware say which. The **Black probe**
+overlay mode (below) tags every line-buffer entry with the pass that wrote it
+and the raw attribute byte that pass fetched, and latches the tag of the first
+colour-0 pixel displayed inside that window, freezing the CPUs at that instant.
+The tag partitions the fault: background pass with attribute 0x00 means the
+tilemap read returned the wrong entry; background pass with 0x07 means the
+fetch was right and the fault is between it and the display; a sprite pass
+means a sprite wrote black where it should have been transparent. Whether the
+bar survives the freeze says whether it needs the CPUs moving.
+
+The first attempt at this fault, recorded here for honesty, assumed the sprite
+control block was being torn between frames and moved the latch to the start
+of every line; the second built the vblank snapshot. Both were sound changes
+-- the snapshot is the right design and the bench caught a real frame of lag
+in its first version -- but neither was the bar, because the bar was never
+measured until the photograph.
 
 ### The overlay, and why the next report will be specific
 
 METHODOLOGY §4 says to add the diagnostic overlay before it is needed; it was
 needed before it existed. It is in now: eight squares in the bottom rows of the
 fight screen, behind **Diagnostics Overlay** in the Pocket menu:
+
+**Status** (the boot-time picture):
 
 | Square | Meaning | Green | Red | Yellow |
 |---|---|---|---|---|
@@ -547,6 +576,19 @@ fight screen, behind **Diagnostics Overlay** in the Pocket menu:
 | 5 | SDRAM read timing setting | normal | — | alternate |
 | 6 | SDRAM controller initialised | yes | — | no |
 | 7 | unused | — | — | grey |
+
+**Faults** (sticky; the first one freezes the CPUs so the frame stays up):
+0 line overran its row, 1 the overrun was still in the background pass,
+2 sprite geometry took more than 700 clocks, 3 one SDRAM read took more than
+96 clocks, 4 loader queue overflowed, 5 black probe hit, 6 ROM readback,
+7 pattern test.
+
+**Black probe** (freezes the CPUs on the hit): square 0 is the pass that
+wrote the first colour-0 pixel seen in the window -- green background, red
+sprite 1, yellow sprite 2 -- and squares 1-7 are bits 1-7 of the attribute
+byte that pass used, red for 1: bits 2-6 the colour, bit 7 the x flip. For
+the canvas the expected byte is 0x07, which is squares 1 and 2 red and the
+rest green. All grey until a hit.
 
 The two self-tests run with the machine held in reset after every load and
 reset, and again whenever **SDRAM Read Timing** is changed from the menu. They

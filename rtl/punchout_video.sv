@@ -85,7 +85,14 @@ module punchout_video (
     output logic        dbg_f_overrun,    // row started with the last line unfinished
     output logic        dbg_f_bg_short,   // ...and it was still in the background pass
     output logic        dbg_f_setup_late, // sprite geometry took > 700 clocks
-    output logic        dbg_f_sd_stall    // one SDRAM read took > 96 clocks
+    output logic        dbg_f_sd_stall,   // one SDRAM read took > 96 clocks
+    //! ---- black probe: the first colour-0 pixel displayed inside a fixed
+    //!      window of the fight screen (lines 144-167, x < 89: where the
+    //!      black bar shows on the Pocket), with the pass that wrote it and
+    //!      the raw attribute byte that pass used. Cleared by probe_clr.
+    input  wire         probe_clr,
+    output logic        dbg_f_black,
+    output wire  [10:0] probe_out         // {valid, writer[1:0], attr[7:0]}
 );
 
     // =========================================================================
@@ -599,6 +606,8 @@ module punchout_video (
     logic [2:0] bg_i;          // pixel within the fetched tile
     logic [7:0] bg_p0, bg_p1;
     logic [4:0] bg_color;
+    logic [7:0] bg_attr_raw, sp_attr_raw;   // for the black probe's tag
+    logic [9:0] tag_wd;
     logic       bg_flipx;
 
     // sprite walk (shared by both engines)
@@ -656,6 +665,7 @@ module punchout_video (
         if (reset) begin
             rs             <= R_IDLE;
             lb_sel         <= 1'b0;
+            tag_wd         <= '0;
             dbg_line_overrun <= 1'b0;
             dbg_worst_line <= '0;
             line_cycles    <= '0;
@@ -725,6 +735,7 @@ module punchout_video (
                     // A settles the tilemap read, B settles the gfx read.
                     R_BG_A: rs <= R_BG_B;
                     R_BG_B: begin
+                        bg_attr_raw <= rend_top ? bgt_attr : bgb_attr;
                         bg_color <= rend_top ? bgt_attr[6:2] : bgb_attr[6:2];
                         bg_flipx <= rend_top ? bgt_attr[7]   : bgb_attr[7];
                         rs       <= R_BG_C;
@@ -739,6 +750,7 @@ module punchout_video (
                         lb_we <= 1'b1;
                         lb_wa <= bg_x[7:0];
                         lb_wd <= {1'b0, bg_color, bg_pen};
+                        tag_wd <= {2'd0, bg_attr_raw};
                         bg_x  <= bg_x + 9'd1;
                         if (!rend_top) bg_tx <= bg_tx + 9'd1;
                         if (bg_x == 9'd255) begin
@@ -775,6 +787,7 @@ module punchout_video (
                     R_S1_TW: begin
                         sp_code  <= {s1_b[1][4:0], s1_b[0]};
                         sp_color <= {1'b0, s1_b[3][4:0]};
+                        sp_attr_raw <= s1_b[3];
                         sp_flipx <= s1_b[3][7];
                         // gfx3 is stored one tile row per four bytes:
                         // +0 plane0, +1 plane1, +2 plane2. Two 16-bit reads.
@@ -810,6 +823,7 @@ module punchout_video (
                             lb_we <= 1'b1;
                             lb_wa <= px[7:0];
                             lb_wd <= {sp_color[4:0], sp1_pen};
+                            tag_wd <= {2'd1, sp_attr_raw};
                         end
                         if (px == 9'd255 || (cx + 32'(incxx1)) >= WIDTHSHIFTED) begin
                             rs <= R_S2_START;
@@ -842,6 +856,7 @@ module punchout_video (
                     end
                     R_S2_TW: begin
                         sp_color <= s2_b[3][5:0];
+                        sp_attr_raw <= s2_b[3];
                         sp_flipx <= s2_b[3][7];
                         // gfx4 is two bytes per tile row: +0 plane0, +1 plane1,
                         // so one 16-bit read has both planes.
@@ -864,6 +879,7 @@ module punchout_video (
                             lb_we <= 1'b1;
                             lb_wa <= px[7:0];
                             lb_wd <= {sp_color, sp2_pen};
+                            tag_wd <= {2'd2, sp_attr_raw};
                         end
                         if (px == 9'd255 || (cx + 32'(incxx2)) >= WIDTHSHIFTED) begin
                             rs <= R_DONE;
@@ -900,6 +916,49 @@ module punchout_video (
         .wa(lb_wa), .we(lb_we && !lb_sel), .d(lb_wd),
         .ra(disp_x), .re(ce_pix), .q(lb1_q));
     wire [7:0] lb_rd = lb_sel ? lb1_q : lb0_q;
+
+    // ---- black probe. A tag rides alongside every line-buffer entry: which
+    //      pass wrote it and the raw attribute byte that pass fetched. The
+    //      first colour-0 pixel (palette index 0-3, all black on the fight
+    //      palette) displayed inside the window latches its tag. The window
+    //      is fixed to where the bar appears on the Pocket; the tag says
+    //      whether the entry came from the background pass with a wrong
+    //      attribute, from a sprite pass, or from the background with the
+    //      RIGHT attribute -- which would put the fault after the fetch.
+    logic [9:0] tb0_q, tb1_q;
+    po_spram_re #(.AW(8), .DW(10)) u_tb0 (.clk(clk),
+        .wa(lb_wa), .we(lb_we &&  lb_sel), .d(tag_wd),
+        .ra(disp_x), .re(ce_pix), .q(tb0_q));
+    po_spram_re #(.AW(8), .DW(10)) u_tb1 (.clk(clk),
+        .wa(lb_wa), .we(lb_we && !lb_sel), .d(tag_wd),
+        .ra(disp_x), .re(ce_pix), .q(tb1_q));
+    wire [9:0] tag_rd = lb_sel ? tb1_q : tb0_q;
+
+    localparam logic [9:0] PROBE_Y0 = 10'd512;   // fight line 144, first of its two rows
+    localparam logic [9:0] PROBE_Y1 = 10'd559;   // fight line 167, second row
+    localparam logic [9:0] PROBE_X1 = 10'd178;   // fight x < 89
+    logic [9:0] dl_x, dl_y;       // the coordinates of the pixel lb_rd belongs to
+    always_ff @(posedge clk) if (ce_pix) begin
+        dl_x <= act_x;
+        dl_y <= act_y;
+    end
+    wire probe_hit = ce_pix && dl_show[0] && !dl_top[0]
+                  && (dl_y >= PROBE_Y0) && (dl_y <= PROBE_Y1) && (dl_x < PROBE_X1)
+                  && (lb_rd[7:2] == 6'd0);
+    logic       probe_valid;
+    logic [9:0] probe_tag;
+    always_ff @(posedge clk) begin
+        dbg_f_black <= 1'b0;
+        if (reset || probe_clr) begin
+            probe_valid <= 1'b0;
+            probe_tag   <= '0;
+        end else if (probe_hit && !probe_valid) begin
+            probe_valid <= 1'b1;
+            probe_tag   <= tag_rd;
+            dbg_f_black <= 1'b1;
+        end
+    end
+    assign probe_out = {probe_valid, probe_tag};
 
     // Diagnostic overlay: eight 12x8 squares in the bottom eight rows, at the
     // left of the fight screen, colour from two status bits each. Hidden
