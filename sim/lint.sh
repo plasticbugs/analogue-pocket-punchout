@@ -25,17 +25,23 @@ WANT="DECLFILENAME UNUSEDSIGNAL UNUSEDPARAM VARHIDDEN PROCASSINIT PROCASSWIRE
       WIDTHEXPAND WIDTHTRUNC WIDTH CASEINCOMPLETE UNSIGNED PINCONNECTEMPTY
       IMPLICITSTATIC IMPORTSTAR DEFPARAM PINMISSING SYNCASYNCNET MULTIDRIVEN"
 
-FLAGS="-Wall"
+# sim/waivers.vlt silences the vendored sources -- tv80, T65, the NES APU and
+# the SDRAM controller -- by PATH rather than by warning name. They are kept
+# byte-identical to upstream so they stay diffable, so their style warnings are
+# not ours to fix, and a name-based list would fail on whichever Verilator the
+# runner happens to have: 5.020 reports BLKSEQ on tv80 where 5.050 does not.
+#
+# That file carries no comments because Verilator's config parser rejects both
+# // and block comments inside it, which is why this note is here instead.
+#
+# Nothing in rtl/punchout_*.sv or rtl/po_*.sv is waived. Lint exists to catch
+# mistakes in this core's own code, and it still does.
+FLAGS="-Wall sim/waivers.vlt"
 for w in $WANT; do
     if verilator --lint-only "-Wno-$w" "$PROBE/lintprobe.v" >/dev/null 2>&1; then
         FLAGS="$FLAGS -Wno-$w"
     fi
 done
-
-# The vendored cores account for most of these: tv80's unused flag parameters,
-# and the NES APU's defparams, package import and one upstream sub-instantiation
-# that leaves allow_us unconnected. Both are kept byte-identical to upstream so
-# they stay diffable, so the warnings are waived rather than fixed.
 
 echo "--- video core ---"
 verilator --lint-only $FLAGS --top-module punchout_video \
