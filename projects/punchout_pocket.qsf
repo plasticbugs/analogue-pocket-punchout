@@ -87,6 +87,13 @@ set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_*
 set_instance_assignment -name FAST_INPUT_REGISTER  ON -to dram_dq[*]
 set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[*]
+# No programmable input delay on the data pins. Left free, the fitter used the
+# I/O delay chain to buy read-capture hold on one fit and not the next: 2.84 ns
+# pin-to-register became 5.6 ns between two compiles of the same RTL, and the
+# 3.3 ns capture window slid from +2.57/+0.77 to -0.19/+3.6. The SDRAM phase is
+# derived for a fixed pin-to-register delay; pinning it here is what makes that
+# derivation hold from one build to the next, CI included.
+set_instance_assignment -name PAD_TO_INPUT_REGISTER_DELAY 0 -to dram_dq[*]
 
 set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:../platform/pocket/scripts/pre_flow.tcl"
 set_global_assignment -name POST_FLOW_SCRIPT_FILE "quartus_sh:../platform/pocket/scripts/post_flow.tcl"

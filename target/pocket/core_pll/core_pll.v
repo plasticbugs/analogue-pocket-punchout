@@ -105,7 +105,7 @@ endmodule
 // Retrieval info: 	<generic name="gui_divide_factor_c3" value="1" />
 // Retrieval info: 	<generic name="gui_actual_output_clock_frequency3" value="0 MHz" />
 // Retrieval info: 	<generic name="gui_ps_units3" value="ps" />
-// Retrieval info: 	<generic name="gui_phase_shift3" value="3650" />
+// Retrieval info: 	<generic name="gui_phase_shift3" value="4550" />
 // Retrieval info: 	<generic name="gui_phase_shift_deg3" value="0.0" />
 // Retrieval info: 	<generic name="gui_actual_phase_shift3" value="0" />
 // Retrieval info: 	<generic name="gui_duty_cycle3" value="50" />

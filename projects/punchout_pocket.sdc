@@ -55,7 +55,7 @@ set_clock_groups -asynchronous \
 #
 # The pin edge therefore trails the same nominal PLL edge by 4.66 ns more than
 # the register's clock does. With phase 3650 ps the chip's edge at its pin
-# lands about 2.1 ns BEFORE the controller's internal edge, which puts every
+# lands about 1.2 ns BEFORE the controller's internal edge, which puts every
 # transfer near the middle of its window:
 #
 #   command launched on our edge E: at the pin E+3, sampled by the chip at its
