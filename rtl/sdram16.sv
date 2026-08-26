@@ -126,9 +126,14 @@ module sdram16 #(
         reg        new_we;
         reg        new_rd;
         reg [24:0] new_waddr;
-        reg        save_we = 1'b1;
+        // No declaration initialiser on either of these: a blocking assignment
+        // to a variable the block otherwise drives non-blocking is an
+        // Unsupported error in Verilator 5.020 (5.050 lets it pass), and the
+        // init path below establishes both anyway -- which is better than a
+        // power-on value, because it also re-establishes them on reset.
+        reg        save_we;
 
-        state_t state = STATE_STARTUP;
+        state_t state;
 
         dq_oe    <= 1'b0;
         command  <= CMD_NOP;
@@ -288,6 +293,9 @@ module sdram16 #(
         if(init) begin
             state         <= STATE_STARTUP;
             refresh_count <= startup_refresh_max - sdram_startup_cycles;
+            save_we       <= 1'b1;   // so the first read cannot take the
+                                     // same-address cache path against a
+                                     // save_addr that is still zero
         end
 
         old_we <= we;

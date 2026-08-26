@@ -24,7 +24,7 @@ echo 'module lintprobe; endmodule' > "$PROBE/lintprobe.v"
 WANT="DECLFILENAME UNUSEDSIGNAL UNUSEDPARAM VARHIDDEN PROCASSINIT PROCASSWIRE
       WIDTHEXPAND WIDTHTRUNC WIDTH CASEINCOMPLETE UNSIGNED PINCONNECTEMPTY
       IMPLICITSTATIC IMPORTSTAR DEFPARAM PINMISSING SYNCASYNCNET MULTIDRIVEN
-      BLKSEQ"
+      BLKSEQ BLKANDNBLK"
 
 # sim/waivers.vlt silences the vendored sources -- tv80, T65, the NES APU and
 # the SDRAM controller -- by PATH rather than by warning name. They are kept
