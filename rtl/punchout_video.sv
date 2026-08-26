@@ -438,14 +438,9 @@ module punchout_video (
     wire  [7:0] next_vy = next_line + 8'd16;
 
     // lb_sel names the buffer the DISPLAY reads; the renderer fills the other.
-    logic [7:0] lb0 [0:255];
-    logic [7:0] lb1 [0:255];
     logic [7:0] lb_wa, lb_wd;
     logic       lb_we;
-    always_ff @(posedge clk) begin
-        if (lb_we &&  lb_sel) lb0[lb_wa] <= lb_wd;
-        if (lb_we && !lb_sel) lb1[lb_wa] <= lb_wd;
-    end
+    logic [7:0] lb0_q, lb1_q;
 
 
     wire row_start = (hcnt == 10'd0) && ce_pix;
@@ -718,11 +713,17 @@ module punchout_video (
     wire [7:0] disp_x   = disp_top ? 8'(act_x - TOP_XOFF) : act_x[8:1];
     wire       show     = raw_de && (disp_top ? in_info : 1'b1);
 
-    logic [7:0] lb_rd;
+    po_spram_re #(.AW(8), .DW(8)) u_lb0 (.clk(clk),
+        .wa(lb_wa), .we(lb_we &&  lb_sel), .d(lb_wd),
+        .ra(disp_x), .re(ce_pix), .q(lb0_q));
+    po_spram_re #(.AW(8), .DW(8)) u_lb1 (.clk(clk),
+        .wa(lb_wa), .we(lb_we && !lb_sel), .d(lb_wd),
+        .ra(disp_x), .re(ce_pix), .q(lb1_q));
+    wire [7:0] lb_rd = lb_sel ? lb1_q : lb0_q;
+
     logic [2:0] dl_show, dl_de, dl_hs, dl_vs, dl_top;
 
     always_ff @(posedge clk) if (ce_pix) begin
-        lb_rd   <= lb_sel ? lb1[disp_x] : lb0[disp_x];
         dl_show <= {dl_show[1:0], show};
         dl_de   <= {dl_de[1:0],   raw_de};
         dl_hs   <= {dl_hs[1:0],   raw_hs};

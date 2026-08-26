@@ -244,6 +244,43 @@ approximation at the cost of a frame of latency in a reaction game.
 `sim/run_system.sh` therefore compares each captured frame against MAME's frame
 *N* and frame *N-1* and passes if either is identical, and says which.
 
+## Synthesis — CLEAN
+
+`./build-local.sh map` (Quartus 18.1 in Docker) runs analysis and synthesis in
+about a minute and is the check to run before every push; a broken push costs a
+whole CI cycle.
+
+| | |
+|---|---|
+| Errors | 0 |
+| Registers | 5,546 |
+| Block memory bits | 879,841 of 3,080,000 (29%) |
+
+### Two things it caught that simulation could not
+
+**The wrong T65.** The copy in `modules/cpu-t65` was NES_MiSTer's, which needs a
+VHDL savestate package this core does not have. Verilator never noticed, because
+it cannot read the file at all and a stub stands in for it. Replaced with
+MiSTer's VIC20 copy, which carries no savestate bus.
+
+**Five memories built out of flip-flops** (METHODOLOGY §5.5, the same category as
+the byte-enable trap). Quartus reported each as "uninferred due to asynchronous
+read logic":
+
+* the two line buffers, because the write and the enabled read were in separate
+  always blocks — 4096 flip-flops for 512 bytes;
+* the work RAM, the NVRAM and the sound RAM, because they used the true
+  dual-port template with the second port tied off, so Quartus saw a port whose
+  output went nowhere and gave up on the whole array.
+
+`po_ram.sv` gained the two templates that were missing: `po_spram` for a single
+CPU bus port, and `po_spram_re` for a write port with an enabled read. Registers
+fell from 9,677 to 5,546 and the block memory bits rose by exactly the 4,096
+the line buffers should always have been.
+
+Both regressions were re-run afterwards and still pass: sixteen frozen states at
+zero differing pixels, and attract mode identical to MAME frame for frame.
+
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report
   worst-case cycles per line, not just pixel equality.

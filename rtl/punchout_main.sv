@@ -58,11 +58,8 @@ module punchout_main (
     output logic        vlm_st,          // LS259 bit 5
     output logic        vlm_vcu,         // LS259 bit 6
 
-    //! ---- NVRAM, brought out so the Pocket can persist it
-    input  wire  [24:0] nv_addr,
-    output logic  [7:0] nv_q,
-    input  wire   [7:0] nv_d,
-    input  wire         nv_we
+    //! ---- diagnostics
+    output logic        dbg_nmi
 );
     // -------------------------------------------------------------------------
     // 4.000 MHz from 96 MHz: an exact divide by 24, so the CPU keeps arcade
@@ -110,7 +107,6 @@ module punchout_main (
         .dout    (cpu_do)
     );
 
-    wire mem_rd = !mreq_n && !rd_n && rfsh_n;
     wire mem_wr = !mreq_n && !wr_n && rfsh_n;
     wire io_rd  = !iorq_n && !rd_n && m1_n;
     wire io_wr  = !iorq_n && !wr_n && m1_n;
@@ -149,7 +145,6 @@ module punchout_main (
     po_spram_dp #(.AW(14), .DW(8)) u_prog_hi (.clk(clk),
         .wa(dl_addr[13:0]), .we(dl_we && in_prog_hi), .d(dl_data),
         .ra(A[13:0]), .q(rom_hi_q));
-    wire [7:0] rom_q = A[15] ? rom_hi_q : rom_lo_q;
     logic rom_hi_d;
     always_ff @(posedge clk) rom_hi_d <= A[15];
 
@@ -157,14 +152,15 @@ module punchout_main (
     // Work RAM, and the battery-backed NVRAM the Pocket can save and restore
     // -------------------------------------------------------------------------
     logic [7:0] ram_q;
-    po_dpram #(.AW(11), .DW(8)) u_ram (.clk(clk),
-        .a_addr(A[10:0]), .a_we(mem_wr_stb && sel_ram), .a_d(cpu_do), .a_q(ram_q),
-        .b_addr(11'd0), .b_we(1'b0), .b_d(8'h00), .b_q());
+    po_spram #(.AW(11), .DW(8)) u_ram (.clk(clk),
+        .addr(A[10:0]), .we(mem_wr_stb && sel_ram), .d(cpu_do), .q(ram_q));
 
+    // Single port for now. Persisting this to the SD card means giving it a
+    // second port for the Pocket's save path -- and po_dpram with one port tied
+    // off does not infer, so that change is a real one, not a wiring tweak.
     logic [7:0] nvram_q;
-    po_dpram #(.AW(10), .DW(8)) u_nvram (.clk(clk),
-        .a_addr(A[9:0]), .a_we(mem_wr_stb && sel_nv), .a_d(cpu_do), .a_q(nvram_q),
-        .b_addr(nv_addr[9:0]), .b_we(nv_we), .b_d(nv_d), .b_q(nv_q));
+    po_spram #(.AW(10), .DW(8)) u_nvram (.clk(clk),
+        .addr(A[9:0]), .we(mem_wr_stb && sel_nv), .d(cpu_do), .q(nvram_q));
 
     // -------------------------------------------------------------------------
     // Video RAM port. The renderer owns the memories; this just forwards.
@@ -262,6 +258,7 @@ module punchout_main (
         end
     end
     assign nmi_n = (nmi_cnt == 3'd0);
+    assign dbg_nmi = ~nmi_n;
 
 endmodule
 

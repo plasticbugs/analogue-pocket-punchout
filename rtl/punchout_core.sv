@@ -43,12 +43,6 @@ module punchout_core (
     //! ---- one pulse per frame at the start of vblank
     output wire         vblank_rise,
 
-    //! ---- NVRAM, so the Pocket can save the high scores and records
-    input  wire  [24:0] nv_addr,
-    output wire   [7:0] nv_q,
-    input  wire   [7:0] nv_d,
-    input  wire         nv_we,
-
     //! ---- SDRAM pins
     inout  wire  [15:0] dram_dq,
     output wire  [12:0] dram_a,
@@ -201,7 +195,7 @@ module punchout_core (
         .snd_reset(snd_reset),
         .vlm_data(vlm_data), .vlm_data_wr(vlm_data_wr),
         .vlm_rst(vlm_rst), .vlm_st(vlm_st), .vlm_vcu(vlm_vcu),
-        .nv_addr(nv_addr), .nv_q(nv_q), .nv_d(nv_d), .nv_we(nv_we));
+        .dbg_nmi());
 
     // =========================================================================
     // Sound board

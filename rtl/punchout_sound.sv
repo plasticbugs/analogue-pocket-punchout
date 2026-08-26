@@ -145,9 +145,8 @@ module punchout_sound (
     wire wr      = ~rw_n;
 
     logic [7:0] ram_q;
-    po_dpram #(.AW(11), .DW(8)) u_ram (.clk(clk),
-        .a_addr(A[10:0]), .a_we(wr && sel_ram && ce_2a03), .a_d(cpu_do), .a_q(ram_q),
-        .b_addr(11'd0), .b_we(1'b0), .b_d(8'h00), .b_q());
+    po_spram #(.AW(11), .DW(8)) u_ram (.clk(clk),
+        .addr(A[10:0]), .we(wr && sel_ram && ce_2a03), .d(cpu_do), .q(ram_q));
 
     wire in_snd_rom = (dl_addr >= 25'h0C000) && (dl_addr < 25'h0E000);
     logic [7:0] rom_q;
@@ -243,9 +242,12 @@ module punchout_sound (
     wire signed [17:0] dcb_out = dcb_y[25:8];
     always_ff @(posedge clk) begin
         if (reset)          sample <= '0;
-        else if (ce_2a03)   sample <= (dcb_out >  18'sd32767) ?  16'sd32767 :
-                                      (dcb_out < -18'sd32768) ? -16'sd32768 :
-                                                                16'(dcb_out);
+        // -16'sd32768 would be a constant overflow: 32768 does not fit a signed
+        // 16-bit literal, so the negation is of a value that has already
+        // wrapped. 16'sh8000 IS -32768.
+        else if (ce_2a03)   sample <= (dcb_out >  18'sh0_7fff) ? 16'sh7fff :
+                                      (dcb_out < -18'sh0_8000) ? 16'sh8000 :
+                                                                 16'(dcb_out);
     end
 
 endmodule

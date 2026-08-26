@@ -28,6 +28,59 @@ module po_spram_dp #(parameter AW = 8, parameter DW = 8) (
     end
 endmodule
 
+//! One port that both reads and writes -- a CPU bus port.
+//!
+//! Do NOT use po_dpram with its second port tied off for this. Quartus then
+//! sees a port whose output goes nowhere, gives up with "uninferred due to
+//! asynchronous read logic", and builds the whole array out of flip-flops. The
+//! work RAM, the NVRAM and the sound RAM all did exactly that.
+//!
+//! Write-through on the write cycle, for the same reason po_dpram does it: an
+//! M10K cannot return the old contents on a write, and asking for that drops
+//! the memory into logic. A CPU bus cycle is a read or a write, never both, so
+//! what it returns on its own write is unobservable.
+module po_spram #(parameter AW = 11, parameter DW = 8) (
+    input  wire           clk,
+    input  wire  [AW-1:0] addr,
+    input  wire           we,
+    input  wire  [DW-1:0] d,
+    output logic [DW-1:0] q
+);
+    logic [DW-1:0] mem [0:(1<<AW)-1] /* verilator public_flat_rd */;
+    initial mem = '{default: '0};
+    always_ff @(posedge clk) begin
+        if (we) begin
+            mem[addr] <= d;
+            q         <= d;
+        end else begin
+            q <= mem[addr];
+        end
+    end
+endmodule
+
+//! One write port and one read port, the read gated by an enable.
+//!
+//! The line buffers need this: the renderer writes every clock while the
+//! display reads once per pixel clock. Splitting those into two always blocks
+//! is what stopped them inferring -- 4096 flip-flops for 512 bytes -- and the
+//! M10K has a read clock enable that does the job properly.
+module po_spram_re #(parameter AW = 8, parameter DW = 8) (
+    input  wire           clk,
+    input  wire  [AW-1:0] wa,
+    input  wire           we,
+    input  wire  [DW-1:0] d,
+    input  wire  [AW-1:0] ra,
+    input  wire           re,
+    output logic [DW-1:0] q
+);
+    logic [DW-1:0] mem [0:(1<<AW)-1] /* verilator public_flat_rd */;
+    initial mem = '{default: '0};
+    always_ff @(posedge clk) begin
+        if (we) mem[wa] <= d;
+        if (re) q <= mem[ra];
+    end
+endmodule
+
 //! True dual port: two independent read/write ports on one array.
 module po_dpram #(parameter AW = 10, parameter DW = 8) (
     input  wire           clk,
