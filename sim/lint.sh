@@ -5,24 +5,34 @@
 set -e
 cd "$(dirname "$0")/.."
 
-# The waiver names below (WIDTHEXPAND, UNUSEDSIGNAL, IMPLICITSTATIC ...) only
-# exist from Verilator 5, and an unknown -Wno- name is an error, not a warning.
-# Say so plainly rather than failing with something that looks like an RTL fault.
-ver=$(verilator --version 2>/dev/null | sed -E 's/^Verilator ([0-9]+).*/\1/')
-if [ -z "$ver" ]; then
-    echo "verilator not found"; exit 2
-fi
-if [ "$ver" -lt 5 ]; then
-    echo "Verilator $ver is too old; this needs 5.x for the warning names used here"
-    exit 2
-fi
-FLAGS="-Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-VARHIDDEN -Wno-PROCASSINIT
-       -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-CASEINCOMPLETE -Wno-UNSIGNED
-       -Wno-PINCONNECTEMPTY -Wno-IMPLICITSTATIC
-       -Wno-UNUSEDPARAM -Wno-IMPORTSTAR -Wno-DEFPARAM -Wno-PINMISSING
-       -Wno-SYNCASYNCNET -Wno-MULTIDRIVEN"
+verilator --version >/dev/null 2>&1 || { echo "verilator not found"; exit 2; }
 
-# The last row of waivers is for vendored code -- tv80's unused flag parameters,
+# Verilator renames and splits warning names between releases -- PROCASSINIT
+# became PROCASSWIRE, UNUSED split into UNUSEDSIGNAL and UNUSEDPARAM, WIDTH
+# split into WIDTHEXPAND and WIDTHTRUNC -- and an unknown -Wno- name is a hard
+# error, not a warning. A CI runner with a different build than the developer's
+# then fails on the flags rather than on the RTL, which is what happened the
+# first time this ran.
+#
+# So each waiver is probed against a trivial module and kept only if this
+# Verilator knows it. Anything genuinely wrong still fails; the list just stops
+# depending on which release is installed.
+PROBE=$(mktemp -d)
+trap 'rm -rf "$PROBE"' EXIT
+echo 'module lintprobe; endmodule' > "$PROBE/lintprobe.v"
+
+WANT="DECLFILENAME UNUSEDSIGNAL UNUSEDPARAM VARHIDDEN PROCASSINIT PROCASSWIRE
+      WIDTHEXPAND WIDTHTRUNC WIDTH CASEINCOMPLETE UNSIGNED PINCONNECTEMPTY
+      IMPLICITSTATIC IMPORTSTAR DEFPARAM PINMISSING SYNCASYNCNET MULTIDRIVEN"
+
+FLAGS="-Wall"
+for w in $WANT; do
+    if verilator --lint-only "-Wno-$w" "$PROBE/lintprobe.v" >/dev/null 2>&1; then
+        FLAGS="$FLAGS -Wno-$w"
+    fi
+done
+
+# The vendored cores account for most of these: tv80's unused flag parameters,
 # and the NES APU's defparams, package import and one upstream sub-instantiation
 # that leaves allow_us unconnected. Both are kept byte-identical to upstream so
 # they stay diffable, so the warnings are waived rather than fixed.
