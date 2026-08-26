@@ -88,11 +88,11 @@
             "value": "0x00000100"
           },
           {
-            "name": "2: black by bg / spr1 (live)",
+            "name": "2: code / map addr lo",
             "value": "0x00000200"
           },
           {
-            "name": "3: black by spr2 / idx 7 (live)",
+            "name": "3: addr hi+CPU wr bot / wr top",
             "value": "0x00000300"
           }
         ]

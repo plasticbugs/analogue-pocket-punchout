@@ -96,8 +96,13 @@ module punchout_video (
     input  wire         probe_clr,
     input  wire   [1:0] vid_mode,         // 0 palette, 1 raw index, 2 writer tag, 3 index 7 in white
     output logic        dbg_f_black,
-    output wire  [62:0] probe_rec,        // see the assign at the probe
-    output logic [31:0] probe_cnt         // black pixels in the window per frame, by writer: see below
+    output wire  [81:0] probe_rec,        // see the assign at the probe
+    output logic [31:0] probe_cnt,        // black pixels in the window per frame, by writer: see below
+    //! CPU writes since probe_clr into bottom tilemap rows 21-22 and into the
+    //! top tilemap, saturating: MAME's game makes none of either through the
+    //! knock-down sequence, so a count here is the Pocket's game diverging
+    output logic  [7:0] probe_wr_bot,
+    output logic  [7:0] probe_wr_top
 );
 
     // =========================================================================
@@ -612,7 +617,9 @@ module punchout_video (
     logic [7:0] bg_p0, bg_p1;
     logic [4:0] bg_color;
     logic [7:0] bg_attr_raw, sp_attr_raw;   // for the black probe's tag
-    logic [9:0] tag_wd;
+    logic [28:0] tag_wd;               // {writer[1:0], attr[7:0], code[7:0], tilemap index[10:0]}
+    logic [7:0]  bg_code_raw;
+    logic [10:0] bg_ridx_raw;
     logic       bg_flipx;
 
     // sprite walk (shared by both engines)
@@ -741,6 +748,8 @@ module punchout_video (
                     R_BG_A: rs <= R_BG_B;
                     R_BG_B: begin
                         bg_attr_raw <= rend_top ? bgt_attr : bgb_attr;
+                        bg_code_raw <= rend_top ? bgt_code : bgb_code;
+                        bg_ridx_raw <= rend_top ? {1'b0, bgt_ridx} : bgb_ridx;
                         bg_color <= rend_top ? bgt_attr[6:2] : bgb_attr[6:2];
                         bg_flipx <= rend_top ? bgt_attr[7]   : bgb_attr[7];
                         rs       <= R_BG_C;
@@ -755,7 +764,7 @@ module punchout_video (
                         lb_we <= 1'b1;
                         lb_wa <= bg_x[7:0];
                         lb_wd <= {1'b0, bg_color, bg_pen};
-                        tag_wd <= {2'd0, bg_attr_raw};
+                        tag_wd <= {2'd0, bg_attr_raw, bg_code_raw, bg_ridx_raw};
                         bg_x  <= bg_x + 9'd1;
                         if (!rend_top) bg_tx <= bg_tx + 9'd1;
                         if (bg_x == 9'd255) begin
@@ -828,7 +837,7 @@ module punchout_video (
                             lb_we <= 1'b1;
                             lb_wa <= px[7:0];
                             lb_wd <= {sp_color[4:0], sp1_pen};
-                            tag_wd <= {2'd1, sp_attr_raw};
+                            tag_wd <= {2'd1, sp_attr_raw, sp_code[7:0], 11'd0};
                         end
                         if (px == 9'd255 || (cx + 32'(incxx1)) >= WIDTHSHIFTED) begin
                             rs <= R_S2_START;
@@ -884,7 +893,7 @@ module punchout_video (
                             lb_we <= 1'b1;
                             lb_wa <= px[7:0];
                             lb_wd <= {sp_color, sp2_pen};
-                            tag_wd <= {2'd2, sp_attr_raw};
+                            tag_wd <= {2'd2, sp_attr_raw, sp_code[7:0], 11'd0};
                         end
                         if (px == 9'd255 || (cx + 32'(incxx2)) >= WIDTHSHIFTED) begin
                             rs <= R_DONE;
@@ -930,14 +939,14 @@ module punchout_video (
     //      whether the entry came from the background pass with a wrong
     //      attribute, from a sprite pass, or from the background with the
     //      RIGHT attribute -- which would put the fault after the fetch.
-    logic [9:0] tb0_q, tb1_q;
-    po_spram_re #(.AW(8), .DW(10)) u_tb0 (.clk(clk),
+    logic [28:0] tb0_q, tb1_q;
+    po_spram_re #(.AW(8), .DW(29)) u_tb0 (.clk(clk),
         .wa(lb_wa), .we(lb_we &&  lb_sel), .d(tag_wd),
         .ra(disp_x), .re(ce_pix), .q(tb0_q));
-    po_spram_re #(.AW(8), .DW(10)) u_tb1 (.clk(clk),
+    po_spram_re #(.AW(8), .DW(29)) u_tb1 (.clk(clk),
         .wa(lb_wa), .we(lb_we && !lb_sel), .d(tag_wd),
         .ra(disp_x), .re(ce_pix), .q(tb1_q));
-    wire [9:0] tag_rd = lb_sel ? tb1_q : tb0_q;
+    wire [28:0] tag_rd = lb_sel ? tb1_q : tb0_q;
 
     // The test is on the colour leaving the PROM stage -- "this pixel went out
     // black" -- not on the palette index, so it catches every black entry the
@@ -951,7 +960,7 @@ module punchout_video (
     // one stage behind the line-buffer read, like dl_show[0].
     logic [9:0] dl_x, dl_y;
     logic [7:0] dl_idx;
-    logic [9:0] dl_tag;
+    logic [28:0] dl_tag;
     always_ff @(posedge clk) if (ce_pix) begin
         dl_x   <= act_x;
         dl_y   <= act_y;
@@ -965,7 +974,7 @@ module punchout_video (
                   && (dl_y >= PROBE_Y0) && (dl_y <= PROBE_Y1) && (dl_x < PROBE_X1)
                   && (pr4 == 4'hf) && (pg4 == 4'hf) && (pb4 == 4'hf);
     logic        probe_valid;
-    logic [61:0] probe_lat;   // exactly the width of the record below: a wider
+    logic [80:0] probe_lat;   // exactly the width of the record below: a wider
                               // register zero-extends it and shifts every field
     logic [13:0] cnt_bg, cnt_s1, cnt_s2, cnt_i7;   // black pixels this frame, by tag
     wire  [3:0] pr4t = prom_q[0][3:0], pg4t = prom_q[1][3:0], pb4t = prom_q[2][3:0];
@@ -976,14 +985,14 @@ module punchout_video (
             probe_lat   <= '0;
         end else if (probe_hit && !probe_valid) begin
             probe_valid <= 1'b1;
-            probe_lat   <= { dl_tag,                       // [62:53] writer[1:0], attr[7:0]
-                             dl_idx,                       // [52:45] palette index
-                             dl_x[8:1],                    // [44:37] fight x
-                             fight_line,                   // [36:29] fight line
-                             pr4, pg4, pb4,                // [28:17] the fight PROM nibbles
-                             pr4t, pg4t, pb4t,             // [16:5]  the info PROM nibbles
-                             palbank_l[1:0],               // [4:3]
-                             dl_top[0], lb_sel };          // [2:1]
+            probe_lat   <= { dl_tag,                       // [80:52] writer[1:0], attr[7:0], code[7:0], index[10:0]
+                             dl_idx,                       // [51:44] palette index
+                             dl_x[8:1],                    // [43:36] fight x
+                             fight_line,                   // [35:28] fight line
+                             pr4, pg4, pb4,                // [27:16] the fight PROM nibbles
+                             pr4t, pg4t, pb4t,             // [15:4]  the info PROM nibbles
+                             palbank_l[1:0],               // [3:2]
+                             dl_top[0], lb_sel };          // [1:0]
             dbg_f_black <= 1'b1;
         end
         // black pixels in the window per frame, live, by the pass that wrote
@@ -995,13 +1004,25 @@ module punchout_video (
             probe_cnt <= {cnt_i7[13:6], cnt_s2[13:6], cnt_s1[13:6], cnt_bg[13:6]};
             cnt_bg <= '0; cnt_s1 <= '0; cnt_s2 <= '0; cnt_i7 <= '0;
         end else if (probe_hit) begin
-            if (dl_tag[9:8] == 2'd0) cnt_bg <= cnt_bg + 14'd1;
-            if (dl_tag[9:8] == 2'd1) cnt_s1 <= cnt_s1 + 14'd1;
-            if (dl_tag[9:8] == 2'd2) cnt_s2 <= cnt_s2 + 14'd1;
+            if (dl_tag[28:27] == 2'd0) cnt_bg <= cnt_bg + 14'd1;
+            if (dl_tag[28:27] == 2'd1) cnt_s1 <= cnt_s1 + 14'd1;
+            if (dl_tag[28:27] == 2'd2) cnt_s2 <= cnt_s2 + 14'd1;
             if (dl_idx == 8'd7)      cnt_i7 <= cnt_i7 + 14'd1;
         end
     end
     assign probe_rec = {probe_valid, probe_lat};
+
+    // rows 21-22 of the bottom map: byte addresses f000 + (21*64)*2 .. f000 + (23*64)*2 - 1
+    wire wr_bot_hit = cpu_vwe && vsel_bot && (cpu_vaddr[11:7] == 5'd21 || cpu_vaddr[11:7] == 5'd22);
+    wire wr_top_hit = cpu_vwe && vsel_top && (cpu_vaddr[10:4] != 7'h7f);   // not the control block at dff0+
+    always_ff @(posedge clk) begin
+        if (reset || probe_clr) begin
+            probe_wr_bot <= '0; probe_wr_top <= '0;
+        end else begin
+            if (wr_bot_hit && probe_wr_bot != 8'hff) probe_wr_bot <= probe_wr_bot + 8'd1;
+            if (wr_top_hit && probe_wr_top != 8'hff) probe_wr_top <= probe_wr_top + 8'd1;
+        end
+    end
 
     // Diagnostic overlay: eight 12x8 squares in the bottom eight rows, at the
     // left of the fight screen, colour from two status bits each. Hidden
@@ -1065,8 +1086,8 @@ module punchout_video (
         end else if (vid_mode == 2'd2) begin
             // the pass that wrote the pixel: green background, red sprite 1
             // (the opponent), yellow sprite 2 (the player / the Game Over box)
-            vid_r <= (dl_show[0] && dl_tag[9:8] != 2'd0) ? 8'hC0 : 8'h00;
-            vid_g <= (dl_show[0] && dl_tag[9:8] != 2'd1) ? 8'hC0 : 8'h00;
+            vid_r <= (dl_show[0] && dl_tag[28:27] != 2'd0) ? 8'hC0 : 8'h00;
+            vid_g <= (dl_show[0] && dl_tag[28:27] != 2'd1) ? 8'hC0 : 8'h00;
             vid_b <= 8'h00;
         end else begin
             vid_r <= dl_show[0] ? ~{r4, r4} : 8'h00;

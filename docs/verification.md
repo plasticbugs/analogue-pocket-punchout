@@ -590,10 +590,13 @@ and squares 1-7 are bits 1-7 of the attribute byte that pass used, red for 1:
 bits 2-6 the colour, bit 7 the x flip. For the canvas the expected byte is
 0x07: squares 1 and 2 red, the rest green. Upper row: the pixel's palette
 index, bit 0 at the left, red for 1. All grey until a hit. That is page 0 of
-**Probe Page**; page 1 is the hit's fight x (upper) and line (lower); pages 2
-and 3 are live per-frame counts of black pixels in the window, in units of
-64: written by the background pass (2 upper), sprite 1 (2 lower), sprite 2
-(3 upper), and pixels whose index was 7, the canvas entry (3 lower).
+**Probe Page**; page 1 is the hit's fight x (upper) and line (lower); page 2
+the tile code byte the pass fetched (upper) and bits 7-0 of the tilemap
+address it read (lower); page 3 upper is that address's bits 10-8 in the
+first three squares then, in five, the CPU writes into bottom rows 21-22
+since the probe was armed (saturating at 31), and lower the CPU writes into
+the top tilemap since arming -- both are zero in MAME through the knock-down
+sequence.
 **Video Path** offers the palette (normal), the raw index (R from bits 7-5, G
 from 4-2, B from 1-0: the canvas is blue), the writer tag (green background,
 red sprite 1, yellow sprite 2) and index 7 in white with the rest raw.
@@ -625,6 +628,26 @@ which is exactly the Game Over box (11 by 3 tiles of sprite 2), whose black
 tiles are index 55: light blue in raw mode. Next build: a video mode that
 paints each pixel by the pass that wrote it, and live black-pixel counts per
 writer.
+
+**Third round** (build d4bc189): in the writer-tag view the bar is **green --
+written by the background pass**, and no sprite-2 box is drawn at its
+position (the yellow box appears only at the end, over the real Game Over
+box). In the index-7-white view the bar is light blue: **not the canvas
+index**, and the per-writer counts agree -- 150 x 64 black pixels per frame
+from the background pass, none from either sprite, and **zero whose index
+was 7**. The earlier "index 7" first-hit record came from a build whose
+record was mis-packed and is discarded. So the background pass drew those
+cells with a wrong colour: for a background pixel to be black and light blue
+in raw view it is pen 3 of colour 11, 12, 13, 28, 29, 30 or 31. The canvas
+cell's attribute is 0x07; reading it as **0xFF** -- the cell's own code byte
+-- gives colour 31, pen 3, index 127: black, raw (96,224,192). The panel
+also shows the info screen's **VS** graphic flashing in unison with the bar,
+and MAME's game writes nothing to the top tilemap through frames 7800-8300
+(`tools/writetap.lua` over d800-dfef), so that flash is the same fault at a
+second place. Next build: the tag carries the code byte and the tilemap
+address the pass used, and two counters of CPU writes MAME never makes here
+(bottom rows 21-22, the top tilemap), to tell a wrong read from a diverged
+game.
 
 The first probe tested the palette index for 0-3 (colour 0). It fired on the
 credit screen's black tiles, as it should, and **not on the bar** -- so the

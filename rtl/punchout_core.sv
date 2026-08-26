@@ -227,27 +227,39 @@ module punchout_core (
     // ---- diagnostic overlay: eight squares, two bits each
     //      0 grey = not applicable, 1 green = good, 2 red = bad, 3 yellow = busy
     function automatic [1:0] rg(input bad); rg = bad ? 2'd2 : 2'd1; endfunction
-    wire [62:0] probe_rec;
+    wire [81:0] probe_rec;
     wire [31:0] probe_cnt;
-    wire        pv = probe_rec[62];
+    wire  [7:0] probe_wr_bot, probe_wr_top;
+    wire        pv = probe_rec[81];
     function automatic [1:0] pb(input v, input bit1); pb = !v ? 2'd0 : bit1 ? 2'd2 : 2'd1; endfunction
     function automatic [15:0] pbyte(input v, input [7:0] b);
         pbyte = { pb(v, b[7]), pb(v, b[6]), pb(v, b[5]), pb(v, b[4]), pb(v, b[3]), pb(v, b[2]), pb(v, b[1]), pb(v, b[0]) };
     endfunction
-    wire [1:0] wr_sq = !pv ? 2'd0 : (probe_rec[61:60] == 2'd0) ? 2'd1 : (probe_rec[61:60] == 2'd1) ? 2'd2 : 2'd3;
+    wire [1:0] wr_sq = !pv ? 2'd0 : (probe_rec[80:79] == 2'd0) ? 2'd1 : (probe_rec[80:79] == 2'd1) ? 2'd2 : 2'd3;
     logic [15:0] pg_hi, pg_lo;    // upper row, lower row
+    wire   [4:0] wr_bot_sat = (probe_wr_bot > 8'd31) ? 5'd31 : probe_wr_bot[4:0];
     always_comb begin
         case (probe_page)
-            // record: [61:60] writer, [59:52] attr, [51:44] index, [43:36] x,
-            // [35:28] line, [27:16] fight PROM RGB, [15:4] info PROM RGB,
-            // [3:2] palette bank, [1] top, [0] line-buffer select
+            // record: [80:79] writer, [78:71] attr, [70:63] code, [62:52]
+            // tilemap index, [51:44] palette index, [43:36] x, [35:28] line,
+            // [27:16] fight PROM RGB, [15:4] info PROM RGB, [3:2] palette
+            // bank, [1] top, [0] line-buffer select
+            //   0  upper: palette index      lower: writer, attribute bits 1-7
+            //   1  upper: fight x            lower: fight line
+            //   2  upper: code byte          lower: tilemap index bits 7-0
+            //   3  upper: tilemap index bits 10-8, then CPU writes to bottom
+            //      rows 21-22 since arming (5 bits, saturating)
+            //      lower: CPU writes to the top tilemap since arming
             2'd0: begin pg_hi = pbyte(pv, probe_rec[51:44]);
-                        pg_lo = { pb(pv, probe_rec[59]), pb(pv, probe_rec[58]), pb(pv, probe_rec[57]),
-                                  pb(pv, probe_rec[56]), pb(pv, probe_rec[55]), pb(pv, probe_rec[54]),
-                                  pb(pv, probe_rec[53]), wr_sq }; end
+                        pg_lo = { pb(pv, probe_rec[78]), pb(pv, probe_rec[77]), pb(pv, probe_rec[76]),
+                                  pb(pv, probe_rec[75]), pb(pv, probe_rec[74]), pb(pv, probe_rec[73]),
+                                  pb(pv, probe_rec[72]), wr_sq }; end
             2'd1: begin pg_hi = pbyte(pv, probe_rec[43:36]); pg_lo = pbyte(pv, probe_rec[35:28]); end
-            2'd2: begin pg_hi = pbyte(1'b1, probe_cnt[7:0]);   pg_lo = pbyte(1'b1, probe_cnt[15:8]);  end
-            default: begin pg_hi = pbyte(1'b1, probe_cnt[23:16]); pg_lo = pbyte(1'b1, probe_cnt[31:24]); end
+            2'd2: begin pg_hi = pbyte(pv, probe_rec[70:63]); pg_lo = pbyte(pv, probe_rec[59:52]); end
+            default: begin pg_hi = { pb(1'b1, wr_bot_sat[4]), pb(1'b1, wr_bot_sat[3]), pb(1'b1, wr_bot_sat[2]),
+                                     pb(1'b1, wr_bot_sat[1]), pb(1'b1, wr_bot_sat[0]),
+                                     pb(pv, probe_rec[62]), pb(pv, probe_rec[61]), pb(pv, probe_rec[60]) };
+                           pg_lo = pbyte(1'b1, probe_wr_top); end
         endcase
     end
     wire [15:0] ovl_stat2 = pg_hi;
@@ -304,7 +316,8 @@ module punchout_core (
         .dbg_f_overrun(f_overrun), .dbg_f_bg_short(f_bg_short),
         .dbg_f_setup_late(f_setup_late), .dbg_f_sd_stall(f_sd_stall),
         .probe_clr(ovl_mode != ovl_mode_d), .vid_mode(vid_mode), .dbg_f_black(f_black),
-        .probe_rec(probe_rec), .probe_cnt(probe_cnt));
+        .probe_rec(probe_rec), .probe_cnt(probe_cnt),
+        .probe_wr_bot(probe_wr_bot), .probe_wr_top(probe_wr_top));
 
     // ---- sticky faults, cleared on reset or when the overlay mode changes.
     //      In Faults mode a fault also freezes the CPUs, so the frame it
