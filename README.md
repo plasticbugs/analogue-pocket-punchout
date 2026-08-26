@@ -79,11 +79,11 @@ Not yet:
 * **Platform artwork.** No banner image ships, so the Pocket shows its default
   one. Cosmetic.
 
-Hardware status: the first build ran, with correct game logic, music and
-backgrounds and garbage sprites -- an SDRAM fault, since fixed twice over
-(`docs/verification.md`). The menu now has a **Diagnostics Overlay** that shows
-the SDRAM self-test results on the panel, so a fault report can name the
-subsystem.
+Hardware status: **plays on the Pocket** -- game logic, music, both screens,
+sprites. Getting the SDRAM path from garbage to correct took four faults, all
+of them in the gap between simulation and silicon; `docs/verification.md`
+tells that story, and the **Diagnostics Overlay** in the core menu is what made
+each one a one-step diagnosis.
 
 ## Building
 

@@ -480,6 +480,8 @@ entire download and releases it after, as the host does. Both benches had been
 feeding a clean burst with reset low, which is why a fault that took every
 sprite twice over never once showed in simulation; it will now.
 
+Fourth report: all seven squares green, and the game plays.
+
 ### The overlay, and why the next report will be specific
 
 METHODOLOGY §4 says to add the diagnostic overlay before it is needed; it was
