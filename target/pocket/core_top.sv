@@ -1048,6 +1048,7 @@ module core_top
     wire [1:0] po_probe_page = mod_sw1[1:0];
     wire [1:0] po_vid_mode   = mod_sw1[3:2];
     wire [1:0] po_rtest      = mod_sw1[5:4];
+    wire [1:0] po_reverb_mode = mod_sw1[7:6];    // Cabinet Reverb: off / light / medium
     wire [7:0] po_pad_raw  = { cont1_key[15], cont1_key[14],          // start, select
                                cont1_key[9],  cont1_key[8],           // R1, L1
                                cont1_key[4],  cont1_key[5],           // A, B
@@ -1230,12 +1231,20 @@ module core_top
                                + {{3{snd_avg_d2[15]}}, snd_avg_d2};
     wire signed [18:0] snd_s4  = snd_tri >>> 2;
     wire signed [16:0] snd_q4  = snd_s4[16:0];
+    // The cabinet reverb sits here, on the 48 kHz stream: it takes the sample
+    // at one tick and its output is handed over at the next (one sample of
+    // latency in every mode, so switching modes changes nothing else).
+    wire signed [15:0] snd_clip48 = (snd_q4 >  17'sh0_7fff) ? 16'sh7fff :
+                                    (snd_q4 < -17'sh0_8000) ? 16'sh8000 : snd_q4[15:0];
+    wire signed [15:0] snd_rv;
+    po_reverb pocket_reverb (
+        .clk(clk_sys), .reset(~pll_core_locked_s), .ce(snd_tick),
+        .mode(po_reverb_mode), .in(snd_clip48), .out(snd_rv));
     always_ff @(posedge clk_sys) begin
         snd_div <= snd_div + 1'd1;
         if (snd_tick) begin
             snd_div  <= 11'd0;
-            snd_hold <= (snd_q4 >  17'sh0_7fff) ? 16'sh7fff :
-                        (snd_q4 < -17'sh0_8000) ? 16'sh8000 : snd_q4[15:0];
+            snd_hold <= snd_rv;
             snd_tog  <= ~snd_tog;
         end
     end

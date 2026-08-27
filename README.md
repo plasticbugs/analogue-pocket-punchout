@@ -50,7 +50,8 @@ PROMs, all the video RAM — is block RAM and single cycle.
 
 Records (high scores) are saved to the SD card by the core itself, a couple of
 seconds after they change, as `Saves/punchout/plasticbugs.punchout/punchout.sav`;
-**Reset Records** in the core menu wipes them.
+**Reset Records** in the core menu wipes them. **Cabinet Reverb** (Off / Light /
+Medium) adds a short room around the whole mix.
 
 There is no start button on this machine: inserting a coin begins play, so both
 Select and Start are wired to the coin slot. Top row is the two jabs, bottom row

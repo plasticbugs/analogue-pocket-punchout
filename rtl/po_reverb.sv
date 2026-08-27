@@ -1,0 +1,105 @@
+//! Cabinet reverb: a short, dark room around the whole mix.
+//!
+//! Three parallel feedback comb filters at 29.7, 37.1 and 41.1 ms (mutually
+//! prime lengths, so their tails do not line up into a ring), each with a
+//! one-pole low-pass in its loop so the tail darkens as it decays, feedback
+//! 5/8 (about 0.5 s to -60 dB); their sum is added under the dry signal at
+//! 1/8 (Light) or 1/4 (Medium). Schroeder's arrangement without the allpass
+//! stage: at this length and level the combs' own density is enough, and the
+//! allpass adds nothing a Pocket speaker would show.
+//!
+//! One sample per ce (48 kHz); the work is sequential and takes a few dozen
+//! clocks of the 2000 available. Delay lines in block RAM, 3 x 2048 x 16.
+//! All arithmetic is shifts and adds; every sum is saturated.
+module po_reverb (
+    input  wire               clk,
+    input  wire               reset,
+    input  wire               ce,          // one 48 kHz tick
+    input  wire        [1:0]  mode,        // 0 off, 1 light, 2 medium, 3 medium
+    input  wire signed [15:0] in,
+    output logic signed [15:0] out         // valid until the next ce, ~40 clocks after this one
+);
+    localparam [10:0] D0 = 11'd1426, D1 = 11'd1781, D2 = 11'd1973;
+
+    logic [10:0] wp /* verilator public_flat_rd */;   // write pointer, common to the three lines
+    logic [10:0] ra;
+    logic        we;
+    logic signed [15:0] wd0 /* verilator public_flat_rd */, wd1, wd2, q0, q1, q2;
+    po_spram_dp #(.AW(11), .DW(16)) u_l0 (.clk(clk), .wa(wp), .we(we), .d(wd0), .ra(ra), .q(q0));
+    po_spram_dp #(.AW(11), .DW(16)) u_l1 (.clk(clk), .wa(wp), .we(we), .d(wd1), .ra(ra), .q(q1));
+    po_spram_dp #(.AW(11), .DW(16)) u_l2 (.clk(clk), .wa(wp), .we(we), .d(wd2), .ra(ra), .q(q2));
+
+    logic signed [15:0] lp0 /* verilator public_flat_rd */, lp1, lp2;
+    logic signed [15:0] x;                 // the input sample being processed
+    logic signed [17:0] wet;
+
+    // Every extension goes through a declared-signed variable first: a bare
+    // concatenation is unsigned in SystemVerilog and would turn the
+    // arithmetic shifts below into logical ones (the first version of this
+    // module pinned its damping states at +32767 that way).
+    function automatic logic signed [15:0] sat18(input logic signed [17:0] v);
+        sat18 = (v > 18'sd32767) ? 16'sd32767 : (v < -18'sd32768) ? -16'sd32768 : v[15:0];
+    endfunction
+    function automatic logic signed [17:0] ext18(input logic signed [15:0] v);
+        ext18 = v;                          // sign-extended, signed to signed
+    endfunction
+    // y += (r - y) / 4, the loop's damping
+    function automatic logic signed [15:0] damp(input logic signed [15:0] y, input logic signed [15:0] r);
+        logic signed [17:0] d, ys, q;
+        ys = ext18(y); d = ext18(r) - ys; q = d >>> 2;
+        damp = sat18(ys + q);
+    endfunction
+    // x + lp * 5/8, what goes back into the line
+    function automatic logic signed [15:0] fb(input logic signed [15:0] xin, input logic signed [15:0] lp);
+        logic signed [17:0] l, s;
+        l = ext18(lp); s = ext18(xin) + (l >>> 1) + (l >>> 3);
+        fb = sat18(s);
+    endfunction
+    // dry + wet / 8 or / 4
+    function automatic logic signed [15:0] mix(input logic signed [15:0] xin, input logic signed [17:0] w, input light);
+        logic signed [17:0] s;
+        s = ext18(xin) + (light ? (w >>> 3) : (w >>> 2));
+        mix = sat18(s);
+    endfunction
+
+    typedef enum logic [3:0] { S_IDLE, S_A0, S_A1, S_A2, S_R0, S_R1, S_R2, S_MIX, S_WR } st_t;
+    st_t st;
+    logic signed [15:0] r0 /* verilator public_flat_rd */, r1, r2;
+
+    always_ff @(posedge clk) begin
+        we <= 1'b0;
+        if (reset) begin
+            st <= S_IDLE; wp <= '0; lp0 <= '0; lp1 <= '0; lp2 <= '0; out <= '0; x <= '0; wet <= '0;
+        end else begin
+            case (st)
+                S_IDLE: if (ce) begin x <= in; ra <= wp - D0; st <= S_A0; end
+                // each read: the address is set one state before, q is valid
+                // two clocks after the address is set
+                S_A0: begin ra <= wp - D1; st <= S_A1; end
+                S_A1: begin r0 <= q0; ra <= wp - D2; st <= S_A2; end       // q0 = line0[wp-D0]
+                S_A2: begin r1 <= q1; st <= S_R2; end                      // q1 = line1[wp-D1]
+                S_R2: begin r2 <= q2; st <= S_R0; end                      // q2 = line2[wp-D2]
+                S_R0: begin
+                    lp0 <= damp(lp0, r0); lp1 <= damp(lp1, r1); lp2 <= damp(lp2, r2);
+                    st <= S_R1;
+                end
+                S_R1: begin
+                    wet <= ext18(lp0) + ext18(lp1) + ext18(lp2);
+                    wd0 <= fb(x, lp0); wd1 <= fb(x, lp1); wd2 <= fb(x, lp2);
+                    st <= S_MIX;
+                end
+                S_MIX: begin
+                    case (mode)
+                        2'd0:    out <= x;
+                        2'd1:    out <= mix(x, wet, 1'b1);
+                        default: out <= mix(x, wet, 1'b0);
+                    endcase
+                    we <= 1'b1;
+                    st <= S_WR;
+                end
+                S_WR: begin wp <= wp + 11'd1; st <= S_IDLE; end
+                default: st <= S_IDLE;
+            endcase
+        end
+    end
+endmodule

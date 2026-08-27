@@ -562,3 +562,15 @@ the machine is in reset -- the same bytes as a fresh file, so both roads to
 "no records" are one road. The game treats either as an unformatted battery
 RAM and writes its defaults.
 
+## Cabinet reverb
+
+An option, not the board: `po_reverb`, on the 48 kHz stream after the
+decimator, three parallel feedback comb filters at 29.7 / 37.1 / 41.1 ms with
+a one-pole damping low-pass in each loop and 5/8 feedback (about 0.4 s to
+-60 dB), summed under the dry signal at 1/8 (Light) or 1/4 (Medium), mono to
+both channels, one sample of latency in every mode. Delay lines in block
+RAM, 3 x 2048 x 16. `sim/tb_reverb.cpp` is its impulse and full-scale bench;
+its first version pinned at +32767 because a bare concatenation is unsigned
+in SystemVerilog and made the arithmetic shifts logical -- every extension
+now goes through a declared-signed variable.
+

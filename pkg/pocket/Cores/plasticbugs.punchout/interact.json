@@ -39,6 +39,30 @@
         ]
       },
       {
+        "name": "Cabinet Reverb",
+        "id": 47,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF2000000",
+        "defaultval": 0,
+        "mask": "0xFFFF3FFF",
+        "options": [
+          {
+            "name": "Off",
+            "value": "0x00000000"
+          },
+          {
+            "name": "Light",
+            "value": "0x00004000"
+          },
+          {
+            "name": "Medium",
+            "value": "0x00008000"
+          }
+        ]
+      },
+      {
         "name": "Difficulty",
         "id": 31,
         "type": "list",

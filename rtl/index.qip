@@ -3,6 +3,7 @@
 # ==============================================================================
 set_global_assignment -name SEARCH_PATH [file join $::quartus(qip_path) ""]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "po_vlm5030.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "po_reverb.sv"]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "punchout_core.sv"]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "punchout_main.sv"]
 set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "punchout_video.sv"]
