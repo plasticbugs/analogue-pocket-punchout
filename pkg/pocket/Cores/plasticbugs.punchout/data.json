@@ -17,14 +17,14 @@
                 "name": "Records",
                 "id": 1,
                 "required": false,
-                "parameters": "0x22",
+                "parameters": "0x2",
                 "nonvolatile": true,
                 "filename": "punchout.sav",
                 "extensions": [
                     "sav"
                 ],
-                "address": "0x10000000",
-                "size_exact": "0x400"
+                "address": "0x20000000",
+                "size_maximum": "0x400"
             }
         ]
     }

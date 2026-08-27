@@ -444,10 +444,17 @@ module core_top
 
     // bridge data slot access
     // synchronous to clk_74a
-    wire  [9:0] datatable_addr;
-    wire        datatable_wren;
-    wire [31:0] datatable_data;
-    wire [31:0] datatable_q;
+    logic  [9:0] datatable_addr;
+    logic        datatable_wren;
+    logic [31:0] datatable_data;
+    wire  [31:0] datatable_q;
+    // the save slot's size for the APF, written continuously as the NES core
+    // does (slot index 1 -> size entry 1*2+1)
+    always_ff @(posedge clk_74a) begin
+        datatable_wren <= 1'b1;
+        datatable_addr <= 10'd3;
+        datatable_data <= 32'h400;
+    end
 
     core_bridge_cmd icb
     (
@@ -541,15 +548,27 @@ module core_top
     wire [31:0] int_bridge_rd_data;
     wire [31:0] nvm_bridge_rd_data_s;
 
-    // The save slot (data.json slot 1, 1 KB at 0x10000000): its own loader,
+    // Not 0x10000000: a slot there hangs the Pocket at the end of loading as
+    // soon as a file exists for it, with or without any hardware behind the
+    // address (bisected on the panel, v0.1.1); 0x20000000, where the NES core
+    // keeps its save, loads. And the APF takes the slot's size for the
+    // write-back from the core's data-slot table, which the NES core writes
+    // and this one did not: entry index*2+1 for slot index 1, 0x400 bytes.
+    //
+    // The save slot (data.json slot 1, 1 KB at 0x20000000): its own loader,
     // since the platform's accepts only the ROM's address range, and the
     // unloader that answers the Pocket's read-back at shutdown. The unloader
     // delivers its word in the bridge clock domain already.
+    // NV_SLOT: 0 = no save-slot hardware at all (a bisection build: the slot
+    // written by the Pocket hung the load), 1 = loader only, 2 = loader and
+    // unloader (the real thing)
+    localparam NV_SLOT = 2;
     wire        nv_dl_download, nv_dl_wr;
     wire [11:0] nv_dl_addr;
     wire  [7:0] nv_dl_data;
     wire [15:0] nv_dl_index;
-    data_io #(.MASK(4'h1), .AW(12), .DW(8), .DELAY(DIO_DELAY), .HOLD(DIO_HOLD)) pocket_nv_io
+    generate if (NV_SLOT >= 1) begin : g_nv_load
+    data_io #(.MASK(4'h2), .AW(12), .DW(8), .DELAY(DIO_DELAY), .HOLD(DIO_HOLD)) pocket_nv_io
     (
         .clk_74a(clk_74a), .clk_memory(clk_sys),
         .dataslot_requestwrite(dataslot_requestwrite), .dataslot_requestwrite_id(dataslot_requestwrite_id),
@@ -559,23 +578,31 @@ module core_top
         .ioctl_download(nv_dl_download), .ioctl_index(nv_dl_index), .ioctl_wr(nv_dl_wr),
         .ioctl_addr(nv_dl_addr), .ioctl_data(nv_dl_data)
     );
+    end else begin : g_nv_noload
+        assign nv_dl_download = 1'b0; assign nv_dl_wr = 1'b0; assign nv_dl_addr = '0;
+        assign nv_dl_data = '0; assign nv_dl_index = '0;
+    end endgenerate
     wire        nv_rd_en;
     wire [11:0] nv_rd_addr;
     wire  [7:0] nv_rd_data;
-    data_unloader #(.ADDRESS_MASK_UPPER_4(4'h1), .ADDRESS_SIZE(12), .READ_MEM_CLOCK_DELAY(4), .INPUT_WORD_SIZE(1)) pocket_nv_unload
+    generate if (NV_SLOT >= 2) begin : g_nv_unload
+    data_unloader #(.ADDRESS_MASK_UPPER_4(4'h2), .ADDRESS_SIZE(12), .READ_MEM_CLOCK_DELAY(4), .INPUT_WORD_SIZE(1)) pocket_nv_unload
     (
         .clk_74a(clk_74a), .clk_memory(clk_sys),
         .bridge_rd(bridge_rd), .bridge_endian_little(bridge_endian_little), .bridge_addr(bridge_addr),
         .bridge_rd_data(nvm_bridge_rd_data_s),
         .read_en(nv_rd_en), .read_addr(nv_rd_addr), .read_data(nv_rd_data)
     );
+    end else begin : g_nv_nounload
+        assign nvm_bridge_rd_data_s = 32'd0; assign nv_rd_en = 1'b0; assign nv_rd_addr = '0;
+    end endgenerate
     // the core's second NVRAM port: a load write wins, else the unloader's read
     wire       po_nv_we   = nv_dl_download && nv_dl_index == 16'h1 && nv_dl_wr;
     wire [9:0] po_nv_addr = po_nv_we ? nv_dl_addr[9:0] : nv_rd_addr[9:0];
 
     always_comb begin
         casex(bridge_addr)
-            32'h10000000: begin bridge_rd_data <= nvm_bridge_rd_data_s; end // HiScore/NVRAM/SRAM Save
+            32'h2xxxxxxx: begin bridge_rd_data <= nvm_bridge_rd_data_s; end // the save slot, every word of it
             32'hF0000000: begin bridge_rd_data <= int_bridge_rd_data;   end // Reset
             32'hF0000010: begin bridge_rd_data <= int_bridge_rd_data;   end // Service Mode Switch
             32'hF1000000: begin bridge_rd_data <= int_bridge_rd_data;   end // DIP Switches

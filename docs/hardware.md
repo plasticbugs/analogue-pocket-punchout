@@ -540,12 +540,15 @@ latches (parameter bytes 8, 4 and 0).
 
 The board's battery-backed 1 KB at c000-c3ff holds the records. On the Pocket
 it is data slot 1, `Records`, nonvolatile: 1 KB at bridge address
-0x10000000, file `punchout.sav`, loaded into the RAM's second port at start
-(a fresh file is filled with 0xFF by the Pocket, parameters bit 5) and read
-back out through the same port when the core is quit, the Pocket put to sleep
-or switched off. The platform's loader accepts only the ROM's address range,
-so the slot has its own `data_io` instance (upper address nibble 1) and a
-`data_unloader`. **Reset Records** in the menu writes bridge address
+0x20000000, file `punchout.sav`, loaded into the RAM's second port at start
+and read back out through the same port when the core is quit, the Pocket
+put to sleep or switched off. The platform's loader accepts only the ROM's
+address range, so the slot has its own `data_io` instance (upper address
+nibble 2) and a `data_unloader`; the core writes the slot's size (0x400)
+into the APF's data-slot table, which is where the Pocket takes the
+write-back length from. Not 0x10000000: a slot there hangs the Pocket at the
+end of loading as soon as a file exists for it, with or without hardware
+behind the address. **Reset Records** in the menu writes bridge address
 0xF0000020: the interact layer holds `nvclear` high through the reset window
 it starts, and the core wipes the RAM to 0xFF through the second port while
 the machine is in reset -- the same bytes as a fresh file, so both roads to
