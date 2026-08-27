@@ -42,6 +42,7 @@ module punchout_core (
     input  wire   [7:0] nv_d,
     output wire   [7:0] nv_q,
     input  wire         nv_clear,
+    output wire         nv_dirty,        // the game changed its records: save them
 
     //! ---- ROM download from the APF data loader
     input  wire         dl_active,
@@ -373,17 +374,15 @@ module punchout_core (
     wire signed [15:0] snd_sample;
     // MAME gives the 2A03 and the VLM5030 equal weight into the speaker; on
     // the Pocket that left the announcer quiet against the music, so he is at
-    // 25/32 to the board's 1/2 (judged on the panel: +25% was still quiet,
-    // +56% is right). The VLM's 10 bits are left-justified to 16 and held
+    // full scale to the board's 1/2 (judged on the panel over three builds:
+    // 1/2, then 5/8, then 25/32 were all still quiet). The VLM's 10 bits are left-justified to 16 and held
     // between its 8 kHz samples (the chip's DAC does the same), sampled here
     // at the sound board's rate; the sum is saturated, since 25/32 + 1/2 can
     // exceed full scale on a loud phrase over loud music.
     logic signed [15:0] vlm_held;
     wire  signed [17:0] snd_h = {{3{snd_sample[15]}}, snd_sample[15:1]};   // /2
-    wire  signed [17:0] vlm_h = {{3{vlm_held[15]}},   vlm_held[15:1]};     // /2
-    wire  signed [17:0] vlm_q = {{4{vlm_held[15]}},   vlm_held[15:2]};     // /4
-    wire  signed [17:0] vlm_t = {{7{vlm_held[15]}},   vlm_held[15:5]};     // /32
-    wire  signed [17:0] mix   = snd_h + vlm_h + vlm_q + vlm_t;
+    wire  signed [17:0] vlm_f = {{2{vlm_held[15]}},   vlm_held};           // x1
+    wire  signed [17:0] mix   = snd_h + vlm_f;
     always_ff @(posedge clk) begin
         if (mach_reset) vlm_held <= '0;
         else if (vlm_sample_ce) vlm_held <= {vlm_sample, 6'b0};
@@ -416,7 +415,7 @@ module punchout_core (
 
     punchout_main u_main (
         .clk(clk), .reset(mach_reset), .pause(cpu_hold),
-        .nv_addr(nvp_addr), .nv_we(nvp_we), .nv_d(nvp_d), .nv_q(nv_q),
+        .nv_addr(nvp_addr), .nv_we(nvp_we), .nv_d(nvp_d), .nv_q(nv_q), .nv_dirty(nv_dirty),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .vblank_rise(nmi_pulse),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),

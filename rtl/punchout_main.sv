@@ -66,7 +66,8 @@ module punchout_main (
     input  wire   [9:0] nv_addr,
     input  wire         nv_we,
     input  wire   [7:0] nv_d,
-    output wire   [7:0] nv_q
+    output wire   [7:0] nv_q,
+    output wire         nv_dirty         // the Z80 wrote the NVRAM this clock
 );
     // -------------------------------------------------------------------------
     // 4.000 MHz from 96 MHz: an exact divide by 24, so the CPU keeps arcade
@@ -166,6 +167,7 @@ module punchout_main (
     // second port for the Pocket's save path -- and po_dpram with one port tied
     // off does not infer, so that change is a real one, not a wiring tweak.
     logic [7:0] nvram_q;
+    assign nv_dirty = mem_wr_stb && sel_nv;
     po_dpram #(.AW(10), .DW(8)) u_nvram (.clk(clk),
         .a_addr(A[9:0]), .a_we(mem_wr_stb && sel_nv), .a_d(cpu_do), .a_q(nvram_q),
         .b_addr(nv_addr), .b_we(nv_we), .b_d(nv_d), .b_q(nv_q));

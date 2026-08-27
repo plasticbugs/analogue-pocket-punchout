@@ -596,6 +596,48 @@ module core_top
     end else begin : g_nv_nounload
         assign nvm_bridge_rd_data_s = 32'd0; assign nv_rd_en = 1'b0; assign nv_rd_addr = '0;
     end endgenerate
+    // Saving is the core's doing, not the exit flush's: the Pocket only writes a
+    // nonvolatile slot back onto a file it loaded, so a first save would never
+    // be created (bisected on the panel, v0.1.1). Instead, whenever the game
+    // has written its battery RAM, two seconds after the last write -- or at
+    // once when the Pocket menu opens -- the core commands the APF to write
+    // slot 1 from bridge address 0x20000000, 1 KB; the APF reads that range
+    // through the unloader above and creates or updates punchout.sav.
+    wire        po_nv_dirty;
+    wire        nv_dirty_s;
+    synch_3 sync_nvd(po_nv_dirty, nv_dirty_s, clk_74a);
+    wire        inmenu_s;
+    synch_3 sync_inmenu(osnotify_inmenu, inmenu_s, clk_74a);
+    reg         nv_pending = 1'b0;          // written since the last save command
+    reg  [27:0] nv_timer   = 28'd0;         // clk_74a cycles since the last write
+    reg         inmenu_d   = 1'b0;
+    reg  [1:0]  nv_state   = 2'd0;          // 0 idle, 1 command raised, 2 waiting for done
+    localparam  NV_SETTLE  = 28'd148_500_000;   // 2 s at 74.25 MHz
+    always_ff @(posedge clk_74a) begin
+        inmenu_d <= inmenu_s;
+        target_dataslot_read     <= 1'b0;
+        target_dataslot_getfile  <= 1'b0;
+        target_dataslot_openfile <= 1'b0;
+        target_dataslot_id         <= 16'd1;
+        target_dataslot_slotoffset <= 32'd0;
+        target_dataslot_bridgeaddr <= 32'h2000_0000;
+        target_dataslot_length     <= 32'h400;
+        if (nv_dirty_s) begin nv_pending <= 1'b1; nv_timer <= 28'd0; end
+        else if (nv_timer != NV_SETTLE) nv_timer <= nv_timer + 28'd1;
+        case (nv_state)
+            2'd0: begin
+                target_dataslot_write <= 1'b0;
+                if (nv_pending && dataslot_allcomplete && (nv_timer == NV_SETTLE || (inmenu_s && !inmenu_d))) begin
+                    target_dataslot_write <= 1'b1;      // rising edge starts the command
+                    nv_pending <= 1'b0;
+                    nv_state   <= 2'd1;
+                end
+            end
+            2'd1: if (target_dataslot_ack) begin target_dataslot_write <= 1'b0; nv_state <= 2'd2; end
+            2'd2: if (target_dataslot_done) nv_state <= 2'd0;
+            default: nv_state <= 2'd0;
+        endcase
+    end
     // the core's second NVRAM port: a load write wins, else the unloader's read
     wire       po_nv_we   = nv_dl_download && nv_dl_index == 16'h1 && nv_dl_wr;
     wire [9:0] po_nv_addr = po_nv_we ? nv_dl_addr[9:0] : nv_rd_addr[9:0];
@@ -1012,6 +1054,7 @@ module core_top
         .nv_d             ( nv_dl_data   ),
         .nv_q             ( nv_rd_data   ),
         .nv_clear         ( nvclear_sw   ),
+        .nv_dirty         ( po_nv_dirty  ),
         .dl_active        ( ioctl_download ),
         .dl_addr          ( dl_addr      ),
         .dl_data          ( dl_data      ),

@@ -530,8 +530,8 @@ latches (parameter bytes 8, 4 and 0).
   image offset 0x56C00 (the same bytes `po_romload` also carries to SDRAM at
   0x50000, now unused there), so speech needs no SDRAM arbitration.
 * **Mix.** MAME routes the 2A03 and the VLM5030 into the speaker at 0.5 each.
-  The core has the VLM at 25/32 to the board's 1/2 -- judged on the Pocket's
-  panel, where equal weight and then 5/8 were both too quiet -- its 10 bits
+  The core has the VLM at full scale to the board's 1/2 -- judged on the
+  Pocket's panel, where 1/2, 5/8 and 25/32 were all too quiet -- its 10 bits
   left-justified to 16 and held
   between its 8 kHz samples, sampled at the sound board's rate, the sum
   saturated.
@@ -541,12 +541,16 @@ latches (parameter bytes 8, 4 and 0).
 The board's battery-backed 1 KB at c000-c3ff holds the records. On the Pocket
 it is data slot 1, `Records`, nonvolatile: 1 KB at bridge address
 0x20000000, file `punchout.sav`, loaded into the RAM's second port at start
-and read back out through the same port when the core is quit, the Pocket
-put to sleep or switched off. The platform's loader accepts only the ROM's
-address range, so the slot has its own `data_io` instance (upper address
-nibble 2) and a `data_unloader`; the core writes the slot's size (0x400)
-into the APF's data-slot table, which is where the Pocket takes the
-write-back length from. Not 0x10000000: a slot there hangs the Pocket at the
+and saved by the core's own command: whenever the game has written its
+battery RAM, two seconds after the last write (or at once when the Pocket
+menu opens) `core_top` issues `target_dataslot_write` for slot 1 from
+0x20000000, 1 KB, and the APF reads the range through the `data_unloader`
+and creates or updates the file. The Pocket's exit-time flush alone never
+creates a file -- it writes a nonvolatile slot back only onto a file it
+loaded -- which is why the first save has to come from the core. The
+platform's loader accepts only the ROM's address range, so the slot has its
+own `data_io` instance (upper address nibble 2); the core also writes the
+slot's size (0x400) into the APF's data-slot table. Not 0x10000000: a slot there hangs the Pocket at the
 end of loading as soon as a file exists for it, with or without hardware
 behind the address. **Reset Records** in the menu writes bridge address
 0xF0000020: the interact layer holds `nvclear` high through the reset window
