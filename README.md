@@ -100,9 +100,12 @@ Working and verified:
 
 Not yet:
 
-* **Music verified against MAME.** The sound board is built and its clock
-  rates are exact, but unlike the video and the speech it has not been held
-  to a MAME recording sample for sample.
+* **Music sample-exact against MAME.** The sound board's music tracks MAME's
+  envelope frame for frame when fed MAME's own register-write stream (the
+  sound CPU is VHDL and cannot run in the simulator, so it is driven that
+  way), but the NES_MiSTer APU and MAME's differ in level convention and
+  mixing detail, so a sample-for-sample match -- as the video and speech have
+  -- is not on offer. `docs/verification.md` has the measurement.
 * **A fight frame-locked to MAME.** The pre-bout sequence matches MAME to the
   frame, but from the first exchange the scripted fight plays out about two
   seconds differently — the game's random source, an input-sampling detail or

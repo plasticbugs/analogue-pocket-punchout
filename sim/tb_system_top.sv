@@ -55,6 +55,9 @@ module tb_system_top (
     output wire   [9:0] dbg_ctrl_wr_vcnt,
     output wire         dbg_ctrl_wr,
     //! every CPU write into video RAM, for the bench's write log
+    output wire         dbg_apu_wr,
+    output wire   [4:0] dbg_apu_addr,
+    output wire   [7:0] dbg_apu_data,
     output wire         dbg_vwe,
     output wire  [15:0] dbg_vaddr,
     output wire   [7:0] dbg_vdata
@@ -72,6 +75,7 @@ module tb_system_top (
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
         .audio(audio), .audio_ce(audio_ce), .vblank_rise(vblank_rise),
         .nv_addr(nv_addr), .nv_we(nv_we), .nv_d(nv_d), .nv_q(nv_q), .nv_clear(nv_clear), .nv_dirty(), .ext_stat(8'd0),
+        .dbg_apu_wr(dbg_apu_wr), .dbg_apu_addr(dbg_apu_addr), .dbg_apu_data(dbg_apu_data),
         .dram_dq(dq), .dram_a(sa), .dram_ba(sba),
         .dram_dqm_l(sdqml), .dram_dqm_h(sdqmh), .dram_cs_n(scs_n),
         .dram_ras_n(sras_n), .dram_cas_n(scas_n), .dram_we_n(swe_n),

@@ -46,6 +46,10 @@ module punchout_sound (
     //! ---- output, signed and DC-free, one new value per chip cycle
     output logic signed [15:0] sample,
     output wire         sample_ce,
+    //! ---- for the bench: every write the 6502 makes to the APU
+    output wire         dbg_apu_wr,
+    output wire   [4:0] dbg_apu_addr,
+    output wire   [7:0] dbg_apu_data,
 
     //! ---- diagnostics
     output logic        dbg_dma_req      // set if the DMC ever asks for a DMA
@@ -144,6 +148,9 @@ module punchout_sound (
     wire sel_ram = (A[15:11] == 5'b00000);            // 0000-07ff
     wire sel_apu = (A[15:5]  == 11'b0100_0000_000);   // 4000-401f
     wire sel_rom = A[15] && A[14] && A[13];           // e000-ffff
+    assign dbg_apu_wr   = wr && sel_apu && ce_2a03;
+    assign dbg_apu_addr = A[4:0];
+    assign dbg_apu_data = cpu_do;
     wire wr      = ~rw_n;
 
     logic [7:0] ram_q;

@@ -80,6 +80,33 @@ static std::vector<unsigned char> load_file(const char *path, bool required = tr
     return d;
 }
 
+// Replay a captured APU register-write trace onto the stubbed sound CPU.
+// PO_APUPLAY=<apucyc.bin>: records are (time_us i64, reg u16, data u8), 11
+// bytes. 2A03 cycles are counted as audio_ce pulses; each write is presented
+// for one cycle when its cycle number arrives, and the sound board's real
+// APU, phi2, enable and DC blocker produce the audio exactly as they ship.
+static void apu_play(Vtb_system_top *d) {
+    static bool init = false, on = false;
+    static std::vector<unsigned char> log;
+    static size_t idx = 0; static long long cyc = 0, t0 = 0; static bool prev_ce = false;
+    if (!init) { init = true; const char *p = getenv("PO_APUPLAY");
+                 if (p) { log = load_file(p, false); on = log.size() >= 11; } }
+    if (!on) return;
+    auto &r = *d->rootp;
+    #define STUB(x) r.tb_system_top__DOT__u_core__DOT__u_sound__DOT__u_cpu__DOT__##x
+    bool ce = d->audio_ce;
+    if (ce && !prev_ce) { cyc++; STUB(inj_we) = 0; }
+    prev_ce = ce;
+    if (idx * 11 + 11 > log.size()) return;
+    long long tus; unsigned short reg; unsigned char data;
+    memcpy(&tus, &log[idx*11], 8); memcpy(&reg, &log[idx*11+8], 2); data = log[idx*11+10];
+    if (idx == 0 && t0 == 0) t0 = tus;
+    long long want = (long long)((tus - t0) * 1.789772);
+    if (cyc >= want && !STUB(inj_we)) { STUB(inj_we) = 1; STUB(inj_addr) = reg & 0x1f; STUB(inj_data) = data; idx++; }
+    #undef STUB
+}
+
+
 // screen:pixels() writes rgb_t as a little-endian u32, so the file runs B G R A.
 static std::vector<unsigned char> mame_rgb(const std::vector<unsigned char> &d) {
     std::vector<unsigned char> out(SW * SH * 3);
@@ -227,14 +254,27 @@ int main(int argc, char **argv) {
                 printf("vw %d %d %04x %02x\n", frame, dut->dbg_ctrl_wr_vcnt, a, dut->dbg_vdata);
         }
         // PO_WAV=<file>, PO_WAV_FROM/TO (frames): the mixed audio as raw
-        // little-endian 16-bit at the sound board's rate / 37 (~48.4 kHz)
+        // little-endian 16-bit at the sound board's rate / 37 (~48.4 kHz),
+        // box-averaged over the 37 source samples so the downsample is
+        // anti-aliased and the waveform compares fairly against the emulator's
+        // own resampled channel.
         if (getenv("PO_WAV") && dut->audio_ce) {
-            static FILE *wf = nullptr; static int dec = 0; static int f0 = 0, f1 = 1 << 30;
+            static FILE *wf = nullptr; static int dec = 0; static long acc = 0; static int f0 = 0, f1 = 1 << 30;
             if (!wf) { wf = fopen(getenv("PO_WAV"), "wb");
                        if (getenv("PO_WAV_FROM")) f0 = atoi(getenv("PO_WAV_FROM"));
                        if (getenv("PO_WAV_TO"))   f1 = atoi(getenv("PO_WAV_TO")); }
-            if (frame >= f0 && frame <= f1 && ++dec >= 37) { dec = 0; short v = (short)dut->audio; fwrite(&v, 2, 1, wf); }
+            acc += (short)dut->audio;
+            if (frame >= f0 && frame <= f1 && ++dec >= 37) { short v = (short)(acc / 37); fwrite(&v, 2, 1, wf); dec = 0; acc = 0; }
             if (frame > f1) fflush(wf);
+        }
+        // PO_APULOG=<file>: (frame u16, addr u16, data u8) per APU write, the
+        // same record aputap.lua writes from MAME
+        { static long apu_seen = 0, apu_rep = 0; if (dut->dbg_apu_wr) apu_seen++;
+          if (getenv("PO_APULOG") && frame == 59 && dut->vblank_rise && !apu_rep++) printf("apu writes seen by frame 59: %ld\n", apu_seen); }
+        if (getenv("PO_APULOG") && dut->dbg_apu_wr) {
+            static FILE *af = nullptr; if (!af) af = fopen(getenv("PO_APULOG"), "wb");
+            unsigned short fr = frame, ad = dut->dbg_apu_addr; unsigned char dv = dut->dbg_apu_data;
+            fwrite(&fr, 2, 1, af); fwrite(&ad, 2, 1, af); fwrite(&dv, 1, 1, af); fflush(af);
         }
         if (getenv("PO_VLM")) {
             static bool pb = false;
@@ -247,6 +287,7 @@ int main(int argc, char **argv) {
             pb = b;
         }
         snapshot_check(dut->rootp);
+        apu_play(dut);
         if (dut->vblank_rise) {
             frame++;
             // PO_LOSE: the same losing fight tools/dumpstate.lua plays in MAME

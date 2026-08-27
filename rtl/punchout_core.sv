@@ -43,6 +43,9 @@ module punchout_core (
     output wire   [7:0] nv_q,
     input  wire         nv_clear,
     output logic        nv_dirty,        // TOGGLES each time the game writes its records
+    output wire         dbg_apu_wr,      // for the bench: the sound CPU's APU writes
+    output wire   [4:0] dbg_apu_addr,
+    output wire   [7:0] dbg_apu_data,
     input  wire   [7:0] ext_stat,        // the platform layer's save status, for the overlay
 
     //! ---- ROM download from the APF data loader
@@ -446,6 +449,7 @@ module punchout_core (
         .vblank_rise(nmi_pulse),
         .soundlatch(soundlatch), .soundlatch2(soundlatch2),
         .sample(snd_sample), .sample_ce(audio_ce),
+        .dbg_apu_wr(dbg_apu_wr), .dbg_apu_addr(dbg_apu_addr), .dbg_apu_data(dbg_apu_data),
         .dbg_dma_req(dbg_dma_req));
 
     // The speech chip is not implemented yet. Its control lines are decoded and

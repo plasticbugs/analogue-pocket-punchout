@@ -31,11 +31,17 @@ module T65 (
     output wire [63:0] DEBUG,
     output wire        NMI_ack
 );
-    assign R_W_n = 1'b1;
+    // Register-write player: the C++ bench pokes these each cycle to replay a
+    // captured trace onto the sound bus. Idle (we=0) reads e000, so the CPU
+    // "runs" harmlessly; we=1 presents a write to 4000+addr with data.
+    logic       inj_we   /* verilator public_flat_rw */ = 1'b0;
+    logic [4:0] inj_addr /* verilator public_flat_rw */ = 5'd0;
+    logic [7:0] inj_data /* verilator public_flat_rw */ = 8'd0;
+    assign R_W_n = ~inj_we;
     assign Sync = 1'b0;
     assign {EF, MF, XF, ML_n, VP_n, VDA, VPA} = 7'b0;
-    assign A = 24'hE000;
-    assign DO = 8'h00;
+    assign A = inj_we ? (24'h00_4000 | {19'b0, inj_addr}) : 24'hE000;   // 4000 + addr
+    assign DO = inj_data;
     assign Regs = 64'd0;
     assign DEBUG = 64'd0;
     assign NMI_ack = 1'b0;

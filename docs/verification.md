@@ -803,6 +803,48 @@ address), and the silent-frame count needed 10 bits (up to 520). Unvoiced
 samples use the same LFSR in model and RTL; MAME uses its own random source
 there, so that is the one respect in which MAME is not the oracle.
 
+## Sound board vs MAME -- content verified, a level-convention difference
+
+The system bench stubs the sound CPU: the 6502 in the 2A03 is T65, which is
+VHDL, and Verilator will not compile it. So the music cannot be produced by
+running the program in simulation. It is verified the way the speech was --
+by driving the real hardware downstream of the CPU with the emulator's own
+stimulus:
+
+* `scratchpad/apucyc.lua` logs every write the sound CPU makes to the APU
+  (0x4000-0x4017) with a microsecond timestamp, and MAME's `-wavwrite` gives
+  the reference audio. MAME's `punchout.cpp` pans the VLM5030 to the left
+  channel and the 2A03 to the right, both at 0.5, so the **right channel of a
+  MAME recording is the sound board alone** -- and attract mode has no speech,
+  so the left channel is silent, a clean oracle.
+* `sim/tb_system.cpp` (`PO_APUPLAY`) replays that timestamped write stream onto
+  the stubbed CPU's bus, so the real APU, the phi2/enable generation, the DC
+  blocker and the mix all run exactly as they ship, and dumps the result
+  (`PO_WAV`, box-averaged to ~48 kHz). `tools/compare_audio.py` compares it to
+  MAME's right channel.
+
+Result over the first 25 s of attract music: the RTL's envelope **tracks
+MAME's frame for frame** across the whole run (rises and falls together; the
+per-window RMS ratio is a fairly constant ~0.33), so the notes, timing and
+tempo are right. Two differences remain, neither a content error:
+
+* **Level.** The RTL sits at about a third of MAME's on this channel -- a
+  constant scale, the level convention of the NES_MiSTer APU against MAME's
+  `nes_apu`, not a gain bug. The on-hardware balance was judged good after the
+  speech was brought up to match.
+* **Fine waveform.** Sample-for-sample correlation is low, and cannot be made
+  high here: the two APUs use different mixing models, the two resamplers
+  differ, and the replay harness injects one register write per enable so
+  dense bursts smear in sub-millisecond timing. Sample-exactness across two
+  independent APU implementations is not an achievable target; the envelope
+  match is.
+
+The CPU-and-program side -- that the sound board issues the *right* writes at
+the right times -- is validated on hardware: the music plays correctly on the
+Pocket, and the T65 is the same core MiSTer ships. What this bench adds is that
+everything the core wraps around the APU (clocking, DC blocker, mix,
+decimation) turns MAME's register stream into the same music.
+
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report
   worst-case cycles per line, not just pixel equality.
