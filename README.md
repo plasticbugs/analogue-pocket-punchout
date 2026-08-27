@@ -54,8 +54,8 @@ the KO; the shoulders mirror the jabs so either hand position works.
 
 ## What is and is not implemented
 
-Synthesis closes on the real part: 25% of the logic, 28% of the block RAM, and
-**+0.844 ns** of setup slack at 96 MHz with nothing negative in any corner.
+Synthesis closes on the real part: 36% of the logic, 35% of the block RAM,
+15 of 66 DSP blocks, and nothing negative in any timing corner at 96 MHz.
 
 Working and verified:
 
