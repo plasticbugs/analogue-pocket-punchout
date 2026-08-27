@@ -234,6 +234,32 @@ layout changes.** This cost several rounds of confusing hardware testing.
 infer byte enables in Quartus and explode into registers. Use 2D-packed
 (`logic [1:0][7:0]`) and word-buffered writes.
 
+**Save RAM is the core's job, not the platform's.** A nonvolatile data slot is
+written back only onto a file the Pocket *loaded* — so the first save never
+appears on its own, and the exit-time flush cannot create it. The core has to
+issue `target_dataslot_write` itself (a couple of seconds after the game last
+touches its battery RAM, and when the menu opens) for the OS to create or
+update the file. Two more traps around the same feature, each of which cost a
+hardware round:
+
+- A save slot at bridge address `0x10000000` hangs the load the instant a file
+  exists for it. `0x20000000` (where other cores keep saves) works. The
+  platform's own loader only accepts the ROM's address range, so a save slot
+  needs its *own* `data_io` and `data_unloader` instance on a different
+  upper-nibble mask.
+- The OS takes the write-back length from the core's **data-slot table** BRAM
+  (`datatable_wren/addr/data`, entry `index*2+1`), which several template
+  cores leave unwritten. If it is zero, nothing is written.
+- Set parameters **bit 5** (initialise-on-load) so a never-loaded slot still
+  counts as loaded; without it the OS has no filename for the core's write and
+  produces either nothing or a junk name at the card root.
+- Saves live under `Saves/<platform>/<core>/`, not `Assets/`. Reinstalling the
+  core does not touch them.
+
+**`video.json` `display_modes` gates the Pocket's own filters.** Declaring
+`{"id": "0x10"}` is what offers CRT Trinitron in the core's display settings;
+remove the array and it — and the frame-blending toggle beside it — vanish.
+
 ### 5.6 Release engineering
 
 - **Release the bitstream you tested**, not a fresh compile of the same source.
@@ -261,6 +287,93 @@ MRA's `map` attribute: each digit is one byte of the output word, left to right;
 the value is the 1-based byte of the input part. Verify against a known-good
 reference — in MAME's `f1dreama` the even-offset ROM carries `map="10"`, which
 establishes that the left digit is the first byte of the word.
+
+### 5.8 An unimplemented peripheral is still a divergence
+
+The costliest bug in this core was a solid black bar that flashed over the
+gameplay, chased across a dozen builds and blamed on tearing, on the SDRAM
+sprite path, and on the colour PROMs in turn — all wrong. The cause was a
+speech chip that had not been implemented yet. The game paces its own display
+against that chip's **BUSY line**: it starts a phrase, then blinks some cells
+until BUSY drops. With the chip stubbed as *never busy*, a phrase "finished"
+instantly and the game ran its blink cue in the wrong place.
+
+The general lesson: a peripheral's **status and handshake lines change the
+CPU's behaviour even when its data output is silent.** Stubbing a chip to its
+idle value is not neutral — it is a specific, usually wrong, answer. Before
+leaving a chip unimplemented, model the lines the program *polls*: BUSY/ready,
+IRQ, DMA-request. Here the fix was to hold BUSY for each phrase's true length
+(a pure function of the ROM, computed by a reference script) long before the
+synthesiser itself existed — and it made the game behave correctly with no
+voice at all. Reproduce it the honest way first: force the same wrong answer
+in the emulator (here, tie the BUSY input high) and confirm the artefact
+appears there too, so you are fixing the real cause and not a coincidence.
+
+### 5.9 Compositing a non-native raster means snapshotting the frame
+
+When the core's output raster is not the board's — two monitors stacked into
+one, an integer upscale, a different blanking interval — the beam no longer
+passes each video-RAM cell at the same time the board's did. The board tolerates
+mid-frame CPU writes because its beam has already gone by; a rescaled raster
+draws that same cell later, and the write tears across the picture.
+
+The fix is to **snapshot the entire video state once per frame** — tilemaps,
+sprite control, scroll, palette — and render only from the snapshot, so nothing
+the CPU does mid-frame can reach the current picture. Two details matter:
+
+- **Take the snapshot late in blanking, after the game's frame handler has
+  run,** or its writes land one frame late — a clean picture with a frame of
+  lag, which a reaction game feels.
+- **The interrupt's phase against the snapshot is now a real parameter.** With
+  the CPU's frame interrupt firing just before the snapshot, a handler that
+  writes across its whole run left half its update in the frame and half in the
+  next — a one-frame flicker on exactly the elements it was updating. Raising
+  the interrupt earlier, so the handler always finishes before the snapshot,
+  fixed it. The game cannot observe interrupt *phase*, only its rate, so this
+  is free to choose.
+
+### 5.10 Verify a block you cannot execute by replaying the oracle's stimulus
+
+Two blocks here could not be run in the RTL simulator: the LPC speech chip
+(before it was written) and the sound CPU (VHDL, which Verilator will not
+compile). Both were still verified against the emulator, the same way:
+
+- Where a reference **algorithm** exists, transcribe it to a script with the
+  emulator's exact integer semantics and hold the RTL to it sample-for-sample.
+  The speech synthesiser matched a transcription of MAME's C on every phrase
+  the game uses, at every speed — bugs the bench caught included an address
+  fetched one cycle early and a counter one bit too narrow.
+- Where the block's **driver** cannot run, capture the driver's outputs from
+  the emulator and replay them into the real submodule. The sound CPU is VHDL,
+  so its APU register writes were logged from MAME with timestamps and replayed
+  onto the actual APU + mixer + decimation through the CPU stub's bus, and the
+  result compared to the emulator's isolated sound channel. You verify
+  everything downstream of the driver without needing the driver itself — and
+  you sidestep the temptation to swap a proven-on-silicon core for a
+  sim-friendly one, which would verify the wrong thing.
+
+Pick the emulator's channel routing to your advantage: many drivers pan
+separate sound sources to separate outputs, so one channel of a stereo capture
+is a clean reference for one chip.
+
+### 5.11 Diagnose silicon-only faults from the panel
+
+Several faults here appeared only on hardware — the black bar, the save slot,
+button mapping. Iterating them through full rebuilds is slow and blind. Two
+techniques paid for themselves many times over:
+
+- **Bisect with the cheapest artefact that changes.** Most of the save-slot
+  investigation was `data.json` edits over one fixed bitstream — a dozen JSON
+  variants, each a ten-second install, isolated the one parameter that mattered
+  without a single recompile. Gate optional hardware behind a localparam so a
+  "does the slot hardware itself hang the load?" build is a one-line change.
+- **Build an in-core inspector you can drive from the menu.** A diagnostic
+  overlay that freezes the machine and reports internal state as coloured
+  squares — and, later, a crosshair the D-pad moves so any pixel's provenance
+  (which render pass wrote it, from which address, what it read) can be read
+  off the panel — turned "a black bar appears" into a decoded fact in one
+  play session. Report a *toggle* rather than a pulse across a clock crossing,
+  and count events so a first-hit latch cannot mislead.
 
 ---
 
