@@ -15,7 +15,7 @@ module po_reverb (
     input  wire               clk,
     input  wire               reset,
     input  wire               ce,          // one 48 kHz tick
-    input  wire        [1:0]  mode,        // 0 off, 1 light, 2 medium, 3 medium
+    input  wire        [1:0]  mode,        // 0 off, 1 light, 2 medium, 3 heavy (medium's level, longer tail)
     input  wire signed [15:0] in,
     output logic signed [15:0] out         // valid until the next ce, ~40 clocks after this one
 );
@@ -49,16 +49,19 @@ module po_reverb (
         ys = ext18(y); d = ext18(r) - ys; q = d >>> 2;
         damp = sat18(ys + q);
     endfunction
-    // x + lp * 5/8, what goes back into the line
-    function automatic logic signed [15:0] fb(input logic signed [15:0] xin, input logic signed [15:0] lp);
+    // x + lp * g, what goes back into the line: g = 5/8, or 13/16 for the
+    // long tail (about 0.4 s and 1.2 s to -60 dB)
+    function automatic logic signed [15:0] fb(input logic signed [15:0] xin, input logic signed [15:0] lp, input long_tail);
         logic signed [17:0] l, s;
-        l = ext18(lp); s = ext18(xin) + (l >>> 1) + (l >>> 3);
+        l = ext18(lp);
+        s = long_tail ? ext18(xin) + (l >>> 1) + (l >>> 2) + (l >>> 4)
+                      : ext18(xin) + (l >>> 1) + (l >>> 3);
         fb = sat18(s);
     endfunction
-    // dry + wet / 8 or / 4
-    function automatic logic signed [15:0] mix(input logic signed [15:0] xin, input logic signed [17:0] w, input light);
+    // dry + wet at 3/16 (light; heavy, whose combs ring louder), or 1/4 (medium)
+    function automatic logic signed [15:0] mix(input logic signed [15:0] xin, input logic signed [17:0] w, input quarter);
         logic signed [17:0] s;
-        s = ext18(xin) + (light ? (w >>> 3) : (w >>> 2));
+        s = quarter ? ext18(xin) + (w >>> 2) : ext18(xin) + (w >>> 3) + (w >>> 4);
         mix = sat18(s);
     endfunction
 
@@ -85,14 +88,14 @@ module po_reverb (
                 end
                 S_R1: begin
                     wet <= ext18(lp0) + ext18(lp1) + ext18(lp2);
-                    wd0 <= fb(x, lp0); wd1 <= fb(x, lp1); wd2 <= fb(x, lp2);
+                    wd0 <= fb(x, lp0, mode == 2'd3); wd1 <= fb(x, lp1, mode == 2'd3); wd2 <= fb(x, lp2, mode == 2'd3);
                     st <= S_MIX;
                 end
                 S_MIX: begin
                     case (mode)
                         2'd0:    out <= x;
-                        2'd1:    out <= mix(x, wet, 1'b1);
-                        default: out <= mix(x, wet, 1'b0);
+                        2'd2:    out <= mix(x, wet, 1'b1);     // medium: 1/4
+                        default: out <= mix(x, wet, 1'b0);     // light and heavy: 3/16
                     endcase
                     we <= 1'b1;
                     st <= S_WR;

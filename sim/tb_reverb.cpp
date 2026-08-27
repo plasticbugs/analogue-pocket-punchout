@@ -18,12 +18,12 @@ static short sample(short in) {   // one 48 kHz period: ce for one clock, then 1
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     dut = new Vpo_reverb;
-    for (int mode = 1; mode <= 2; mode++) {
+    for (int mode = 1; mode <= 3; mode++) {
         dut->reset = 1; dut->ce = 0; dut->mode = mode; tick(); tick(); dut->reset = 0; tick();
         std::vector<int> out;
         for (int n = 0; n < 48000; n++) out.push_back(sample(n == 0 ? 16384 : 0));
         printf("mode %d impulse 16384: out[1]=%d (dry, one sample late)\n", mode, out[1]);
-        if (mode == 1) {
+        if (false) {
             // replay the first 1440 samples watching the loop's internals around the first recurrence
             dut->reset = 1; tick(); dut->reset = 0; tick();
             for (int n = 0; n < 1440; n++) {

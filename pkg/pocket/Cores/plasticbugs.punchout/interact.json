@@ -59,6 +59,66 @@
           {
             "name": "Medium",
             "value": "0x00008000"
+          },
+          {
+            "name": "Heavy",
+            "value": "0x0000C000"
+          }
+        ]
+      },
+      {
+        "name": "Scanlines",
+        "id": 48,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF3000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFFFC",
+        "options": [
+          {
+            "name": "Off",
+            "value": "0x00000000"
+          },
+          {
+            "name": "25%",
+            "value": "0x00000001"
+          },
+          {
+            "name": "50%",
+            "value": "0x00000002"
+          },
+          {
+            "name": "75%",
+            "value": "0x00000003"
+          }
+        ]
+      },
+      {
+        "name": "Shadow Mask",
+        "id": 49,
+        "type": "list",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF3000000",
+        "defaultval": 0,
+        "mask": "0xFFFFFF8F",
+        "options": [
+          {
+            "name": "Off",
+            "value": "0x00000000"
+          },
+          {
+            "name": "On",
+            "value": "0x00000010"
+          },
+          {
+            "name": "On, rotated",
+            "value": "0x00000030"
+          },
+          {
+            "name": "On, 2x",
+            "value": "0x00000050"
           }
         ]
       },
