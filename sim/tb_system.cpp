@@ -113,6 +113,7 @@ int main(int argc, char **argv) {
     dut->hw_reset = 1;
     dut->reset = 1; dut->dl_active = 1; dut->dl_we = 0;
     dut->in0 = 0; dut->in1 = 0;
+    dut->nv_addr = 0; dut->nv_we = 0; dut->nv_d = 0; dut->nv_clear = 0;
     dut->dsw1 = 0x00; dut->dsw2 = 0x10;      // factory defaults
     for (int i = 0; i < 64; i++) tick();
     dut->hw_reset = 0;                        // PLL locked; reset stays asserted
@@ -134,6 +135,16 @@ int main(int argc, char **argv) {
     }
     dut->dl_active = 0;
     for (int i = 0; i < 4096; i++) tick();    // let the FIFO drain
+    // PO_NVRAM=<file>: a 1 KB save preloaded through the second port before
+    // the machine is released, as the Pocket's loader does
+    if (getenv("PO_NVRAM")) {
+        std::vector<unsigned char> nv = load_file(getenv("PO_NVRAM"));
+        for (unsigned a = 0; a < 1024 && a < nv.size(); a++) {
+            dut->nv_addr = a; dut->nv_d = nv[a]; dut->nv_we = 1; tick();
+        }
+        dut->nv_we = 0; tick();
+        printf("nvram: preloaded %zu bytes from %s\n", nv.size(), getenv("PO_NVRAM"));
+    }
     dut->reset = 0;                           // the host releases the core
     {
         // The loader goes through a write FIFO here, which the frozen-state
@@ -371,6 +382,15 @@ int main(int argc, char **argv) {
            "%ld shadows checked against live, %ld mismatched\n",
            cp_walks, cp_walks_with_wr, cp_wr_in_walk, cp_wt, cp_checked, cp_bad);
     if (cp_bad) failures++;
+    // PO_NVRAM_OUT=<file>: the NVRAM read back through the second port at the end
+    if (getenv("PO_NVRAM_OUT")) {
+        FILE *o = fopen(getenv("PO_NVRAM_OUT"), "wb");
+        for (unsigned a = 0; a < 1024; a++) {
+            dut->nv_addr = a; tick(); tick();
+            unsigned char b = dut->nv_q; fwrite(&b, 1, 1, o);
+        }
+        fclose(o); printf("nvram: wrote %s\n", getenv("PO_NVRAM_OUT"));
+    }
     if (getenv("PO_WRHIST")) {
         printf("sprite-control writes by raster row (active rows are 20..691, "
                "vblank 692..713 and 0..19):\n");

@@ -12,6 +12,19 @@
                     "rom"
                 ],
                 "address": "0x00000000"
+            },
+            {
+                "name": "Records",
+                "id": 1,
+                "required": false,
+                "parameters": "0x22",
+                "nonvolatile": true,
+                "filename": "punchout.sav",
+                "extensions": [
+                    "sav"
+                ],
+                "address": "0x10000000",
+                "size_exact": "0x400"
             }
         ]
     }

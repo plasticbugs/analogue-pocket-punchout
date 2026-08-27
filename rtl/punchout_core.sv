@@ -34,6 +34,14 @@ module punchout_core (
     input  wire         cur_fast,        // ...in steps of 8
     input  wire         freeze,          // hold both CPUs; the video keeps rendering
     input  wire   [7:0] pad_raw,         // raw pad bits for the inputs overlay
+    //! ---- NVRAM: the Pocket's save slot loads into it and reads it back;
+    //!      nv_clear (held through a reset) wipes it to 0xFF, the value the
+    //!      Pocket fills a fresh save with, so both roads to "no records" agree
+    input  wire   [9:0] nv_addr,
+    input  wire         nv_we,
+    input  wire   [7:0] nv_d,
+    output wire   [7:0] nv_q,
+    input  wire         nv_clear,
 
     //! ---- ROM download from the APF data loader
     input  wire         dl_active,
@@ -391,8 +399,24 @@ module punchout_core (
     // than the board's vblank, so the handlers' writes are all done before the
     // video snapshots its state at the end of blanking (NMI_ROW in the video).
     wire nmi_pulse;
+    // the wipe: on nv_clear's rising edge, 1024 writes of 0xFF through the
+    // second port; the external port waits (the Pocket is not loading or
+    // unloading while the user is in the menu pressing "reset records")
+    logic [10:0] nvc_cnt;      // bit 10 = running
+    logic        nv_clear_d;
+    always_ff @(posedge clk) begin
+        nv_clear_d <= nv_clear;
+        if (hw_reset) nvc_cnt <= '0;
+        else if (nv_clear && !nv_clear_d) nvc_cnt <= 11'h400;
+        else if (nvc_cnt[10]) nvc_cnt <= (nvc_cnt[9:0] == 10'h3ff) ? 11'h000 : nvc_cnt + 11'd1;
+    end
+    wire [9:0] nvp_addr = nvc_cnt[10] ? nvc_cnt[9:0] : nv_addr;
+    wire       nvp_we   = nvc_cnt[10] ? 1'b1 : nv_we;
+    wire [7:0] nvp_d    = nvc_cnt[10] ? 8'hFF : nv_d;
+
     punchout_main u_main (
         .clk(clk), .reset(mach_reset), .pause(cpu_hold),
+        .nv_addr(nvp_addr), .nv_we(nvp_we), .nv_d(nvp_d), .nv_q(nv_q),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .vblank_rise(nmi_pulse),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),

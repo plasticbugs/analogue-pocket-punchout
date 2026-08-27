@@ -48,6 +48,10 @@ PROMs, all the video RAM — is block RAM and single cycle.
 | Select | Coin |
 | Start | Coin |
 
+Records (high scores) are saved to the SD card as `Assets/punchout/common/punchout.sav`
+when the core is quit or the Pocket sleeps or powers off; **Reset Records** in
+the core menu wipes them.
+
 There is no start button on this machine: inserting a coin begins play, so both
 Select and Start are wired to the coin slot. Top row is the two jabs, bottom row
 the KO; the shoulders mirror the jabs so either hand position works.
@@ -73,8 +77,6 @@ Working and verified:
 
 Not yet:
 
-* **Persistent records.** The NVRAM works within a session but is not yet saved
-  to the SD card.
 * **Audio verified against MAME.** The sound path is built and the clock rates
   are exact, but it has not been measured against a MAME recording yet.
 * **Platform artwork.** No banner image ships, so the Pocket shows its default

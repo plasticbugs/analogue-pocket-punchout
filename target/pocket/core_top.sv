@@ -539,14 +539,39 @@ module core_top
     //! APF Bridge Read Data
     //! ------------------------------------------------------------------------
     wire [31:0] int_bridge_rd_data;
-    wire [31:0] nvm_bridge_rd_data, nvm_bridge_rd_data_s;
+    wire [31:0] nvm_bridge_rd_data_s;
 
-    // Synchronize nvm_bridge_rd_data into clk_74a domain before usage.
-    // WIDTH is not optional here: the template omits it, which instantiates a
-    // one-bit synchroniser and leaves 31 of the 32 bits uncrossed. This core
-    // does not use the NVRAM path, but a half-synchronised word is wrong
-    // whether or not anything reads it.
-    synch_3 #(.WIDTH(32)) sync_nvm(nvm_bridge_rd_data, nvm_bridge_rd_data_s, clk_74a);
+    // The save slot (data.json slot 1, 1 KB at 0x10000000): its own loader,
+    // since the platform's accepts only the ROM's address range, and the
+    // unloader that answers the Pocket's read-back at shutdown. The unloader
+    // delivers its word in the bridge clock domain already.
+    wire        nv_dl_download, nv_dl_wr;
+    wire [11:0] nv_dl_addr;
+    wire  [7:0] nv_dl_data;
+    wire [15:0] nv_dl_index;
+    data_io #(.MASK(4'h1), .AW(12), .DW(8), .DELAY(DIO_DELAY), .HOLD(DIO_HOLD)) pocket_nv_io
+    (
+        .clk_74a(clk_74a), .clk_memory(clk_sys),
+        .dataslot_requestwrite(dataslot_requestwrite), .dataslot_requestwrite_id(dataslot_requestwrite_id),
+        .dataslot_allcomplete(dataslot_allcomplete),
+        .bridge_endian_little(bridge_endian_little), .bridge_addr(bridge_addr),
+        .bridge_wr(bridge_wr), .bridge_wr_data(bridge_wr_data),
+        .ioctl_download(nv_dl_download), .ioctl_index(nv_dl_index), .ioctl_wr(nv_dl_wr),
+        .ioctl_addr(nv_dl_addr), .ioctl_data(nv_dl_data)
+    );
+    wire        nv_rd_en;
+    wire [11:0] nv_rd_addr;
+    wire  [7:0] nv_rd_data;
+    data_unloader #(.ADDRESS_MASK_UPPER_4(4'h1), .ADDRESS_SIZE(12), .READ_MEM_CLOCK_DELAY(4), .INPUT_WORD_SIZE(1)) pocket_nv_unload
+    (
+        .clk_74a(clk_74a), .clk_memory(clk_sys),
+        .bridge_rd(bridge_rd), .bridge_endian_little(bridge_endian_little), .bridge_addr(bridge_addr),
+        .bridge_rd_data(nvm_bridge_rd_data_s),
+        .read_en(nv_rd_en), .read_addr(nv_rd_addr), .read_data(nv_rd_data)
+    );
+    // the core's second NVRAM port: a load write wins, else the unloader's read
+    wire       po_nv_we   = nv_dl_download && nv_dl_index == 16'h1 && nv_dl_wr;
+    wire [9:0] po_nv_addr = po_nv_we ? nv_dl_addr[9:0] : nv_rd_addr[9:0];
 
     always_comb begin
         casex(bridge_addr)
@@ -585,7 +610,7 @@ module core_top
     wire  [7:0] mod_sw0, mod_sw1, mod_sw2, mod_sw3;
     wire  [3:0] scnl_sw, smask_sw, afilter_sw, vol_att;
     wire [63:0] status;
-    wire        reset_sw, svc_sw;
+    wire        reset_sw, svc_sw, nvclear_sw;
 
     interact pocket_interact
     (
@@ -624,7 +649,8 @@ module core_top
         .afilter_sw       ( afilter_sw         ),
         .vol_att          ( vol_att            ),
         // Reset Switch
-        .reset_sw         ( reset_sw           )
+        .reset_sw         ( reset_sw           ),
+        .nvclear_sw       ( nvclear_sw         )
     );
 
     //! ------------------------------------------------------------------------
@@ -954,6 +980,11 @@ module core_top
         .cur_move         ( {m_down, m_up, m_left, m_right} ),
         .cur_fast         ( m_btn2 | m_btn3 ),   // KO buttons: 8-pixel steps
         .pad_raw          ( po_pad_raw   ),
+        .nv_addr          ( po_nv_addr   ),
+        .nv_we            ( po_nv_we     ),
+        .nv_d             ( nv_dl_data   ),
+        .nv_q             ( nv_rd_data   ),
+        .nv_clear         ( nvclear_sw   ),
         .dl_active        ( ioctl_download ),
         .dl_addr          ( dl_addr      ),
         .dl_data          ( dl_data      ),

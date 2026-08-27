@@ -60,7 +60,13 @@ module punchout_main (
     output logic        vlm_vcu,         // LS259 bit 6
 
     //! ---- diagnostics
-    output logic        dbg_nmi
+    output logic        dbg_nmi,
+    //! ---- the NVRAM's second port: the Pocket loads a save into it at start,
+    //!      reads it back at shutdown, and the records-reset wipes it
+    input  wire   [9:0] nv_addr,
+    input  wire         nv_we,
+    input  wire   [7:0] nv_d,
+    output wire   [7:0] nv_q
 );
     // -------------------------------------------------------------------------
     // 4.000 MHz from 96 MHz: an exact divide by 24, so the CPU keeps arcade
@@ -160,8 +166,9 @@ module punchout_main (
     // second port for the Pocket's save path -- and po_dpram with one port tied
     // off does not infer, so that change is a real one, not a wiring tweak.
     logic [7:0] nvram_q;
-    po_spram #(.AW(10), .DW(8)) u_nvram (.clk(clk),
-        .addr(A[9:0]), .we(mem_wr_stb && sel_nv), .d(cpu_do), .q(nvram_q));
+    po_dpram #(.AW(10), .DW(8)) u_nvram (.clk(clk),
+        .a_addr(A[9:0]), .a_we(mem_wr_stb && sel_nv), .a_d(cpu_do), .a_q(nvram_q),
+        .b_addr(nv_addr), .b_we(nv_we), .b_d(nv_d), .b_q(nv_q));
 
     // -------------------------------------------------------------------------
     // Video RAM port. The renderer owns the memories; this just forwards.

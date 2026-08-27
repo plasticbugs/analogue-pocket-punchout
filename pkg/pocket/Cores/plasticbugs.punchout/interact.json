@@ -11,6 +11,14 @@
         "value": 1
       },
       {
+        "name": "Reset Records",
+        "id": 50,
+        "type": "action",
+        "enabled": true,
+        "address": "0xF0000020",
+        "value": 1
+      },
+      {
         "name": "Screen Shape",
         "id": 30,
         "type": "list",
