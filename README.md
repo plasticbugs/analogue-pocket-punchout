@@ -48,9 +48,9 @@ PROMs, all the video RAM — is block RAM and single cycle.
 | Select | Coin |
 | Start | Coin |
 
-Records (high scores) are saved to the SD card as `Assets/punchout/common/punchout.sav`
-when the core is quit or the Pocket sleeps or powers off; **Reset Records** in
-the core menu wipes them.
+Records (high scores) are saved to the SD card by the core itself, a couple of
+seconds after they change, as `Saves/punchout/plasticbugs.punchout/punchout.sav`;
+**Reset Records** in the core menu wipes them.
 
 There is no start button on this machine: inserting a coin begins play, so both
 Select and Start are wired to the coin slot. Top row is the two jabs, bottom row

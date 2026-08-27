@@ -17,7 +17,7 @@
                 "name": "Records",
                 "id": 1,
                 "required": false,
-                "parameters": "0x2",
+                "parameters": "0x22",
                 "nonvolatile": true,
                 "filename": "punchout.sav",
                 "extensions": [

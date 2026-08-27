@@ -42,7 +42,8 @@ module punchout_core (
     input  wire   [7:0] nv_d,
     output wire   [7:0] nv_q,
     input  wire         nv_clear,
-    output wire         nv_dirty,        // the game changed its records: save them
+    output logic        nv_dirty,        // TOGGLES each time the game writes its records
+    input  wire   [7:0] ext_stat,        // the platform layer's save status, for the overlay
 
     //! ---- ROM download from the APF data loader
     input  wire         dl_active,
@@ -240,6 +241,7 @@ module punchout_core (
     // ---- diagnostic overlay: eight squares, two bits each
     //      0 grey = not applicable, 1 green = good, 2 red = bad, 3 yellow = busy
     function automatic [1:0] rg(input bad); rg = bad ? 2'd2 : 2'd1; endfunction
+    function automatic [1:0] lit(input on); lit = on ? 2'd3 : 2'd0; endfunction
     wire [81:0] probe_rec;
     wire [15:0] porta_rec;
     wire        cpu_hold;         // assigned with the sticky faults below
@@ -288,8 +290,9 @@ module punchout_core (
                                rg(dbg_line_overrun), rg(dbg_load_overflow) };
             // faults, sticky: 0 overrun 1 bg short 2 setup late 3 sd stall
             //                 4 load overflow 5 black probe 6 rom 7 pattern
-            2'd2: ovl_stat = { rg(sticky[7]), rg(sticky[6]), rg(sticky[8]), rg(sticky[4]),
-                               rg(sticky[3]), rg(sticky[2]), rg(sticky[1]), rg(sticky[0]) };
+            // save status from the platform layer (yellow = set)
+            2'd2: ovl_stat = { lit(ext_stat[7]), lit(ext_stat[6]), lit(ext_stat[5]), lit(ext_stat[4]),
+                               lit(ext_stat[3]), lit(ext_stat[2]), lit(ext_stat[1]), lit(ext_stat[0]) };
             // black probe: two rows of eight, bit 0 at the left, red = 1,
             // green = 0, grey until a hit. Which 16 bits depends on the page:
             //   0  upper: palette index          lower: writer (green bg, red
@@ -409,13 +412,18 @@ module punchout_core (
         else if (nv_clear && !nv_clear_d) nvc_cnt <= 11'h400;
         else if (nvc_cnt[10]) nvc_cnt <= (nvc_cnt[9:0] == 10'h3ff) ? 11'h000 : nvc_cnt + 11'd1;
     end
+    wire       nv_dirty_pulse;
+    always_ff @(posedge clk) begin
+        if (hw_reset) nv_dirty <= 1'b0;
+        else if (nv_dirty_pulse) nv_dirty <= ~nv_dirty;   // a toggle survives the clock crossing
+    end
     wire [9:0] nvp_addr = nvc_cnt[10] ? nvc_cnt[9:0] : nv_addr;
     wire       nvp_we   = nvc_cnt[10] ? 1'b1 : nv_we;
     wire [7:0] nvp_d    = nvc_cnt[10] ? 8'hFF : nv_d;
 
     punchout_main u_main (
         .clk(clk), .reset(mach_reset), .pause(cpu_hold),
-        .nv_addr(nvp_addr), .nv_we(nvp_we), .nv_d(nvp_d), .nv_q(nv_q), .nv_dirty(nv_dirty),
+        .nv_addr(nvp_addr), .nv_we(nvp_we), .nv_d(nvp_d), .nv_q(nv_q), .nv_dirty(nv_dirty_pulse),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .vblank_rise(nmi_pulse),
         .in0(in0), .in1(in1), .dsw1(dsw1), .dsw2(dsw2),

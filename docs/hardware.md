@@ -540,8 +540,11 @@ latches (parameter bytes 8, 4 and 0).
 
 The board's battery-backed 1 KB at c000-c3ff holds the records. On the Pocket
 it is data slot 1, `Records`, nonvolatile: 1 KB at bridge address
-0x20000000, file `punchout.sav`, loaded into the RAM's second port at start
-and saved by the core's own command: whenever the game has written its
+0x20000000, file `Saves/punchout/plasticbugs.punchout/punchout.sav`, loaded
+into the RAM's second port at start (parameters 0x22: "initialise on load"
+marks the slot as loaded even on the first run, filling it with 0xFF -- without
+that bit the APF has no name for a never-loaded slot and either writes nothing
+or a junk filename) and saved by the core's own command: whenever the game has written its
 battery RAM, two seconds after the last write (or at once when the Pocket
 menu opens) `core_top` issues `target_dataslot_write` for slot 1 from
 0x20000000, 1 KB, and the APF reads the range through the `data_unloader`

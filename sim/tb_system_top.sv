@@ -71,7 +71,7 @@ module tb_system_top (
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
         .audio(audio), .audio_ce(audio_ce), .vblank_rise(vblank_rise),
-        .nv_addr(nv_addr), .nv_we(nv_we), .nv_d(nv_d), .nv_q(nv_q), .nv_clear(nv_clear),
+        .nv_addr(nv_addr), .nv_we(nv_we), .nv_d(nv_d), .nv_q(nv_q), .nv_clear(nv_clear), .nv_dirty(), .ext_stat(8'd0),
         .dram_dq(dq), .dram_a(sa), .dram_ba(sba),
         .dram_dqm_l(sdqml), .dram_dqm_h(sdqmh), .dram_cs_n(scs_n),
         .dram_ras_n(sras_n), .dram_cas_n(scas_n), .dram_we_n(swe_n),

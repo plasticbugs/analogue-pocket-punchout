@@ -603,18 +603,30 @@ module core_top
     // once when the Pocket menu opens -- the core commands the APF to write
     // slot 1 from bridge address 0x20000000, 1 KB; the APF reads that range
     // through the unloader above and creates or updates punchout.sav.
-    wire        po_nv_dirty;
+    wire        po_nv_dirty;                // toggles on every records write
     wire        nv_dirty_s;
     synch_3 sync_nvd(po_nv_dirty, nv_dirty_s, clk_74a);
     wire        inmenu_s;
     synch_3 sync_inmenu(osnotify_inmenu, inmenu_s, clk_74a);
+    reg         nv_dirty_d = 1'b0, inmenu_d = 1'b0, allc_d = 1'b0;
     reg         nv_pending = 1'b0;          // written since the last save command
-    reg  [27:0] nv_timer   = 28'd0;         // clk_74a cycles since the last write
-    reg         inmenu_d   = 1'b0;
+    reg  [27:0] nv_timer   = 28'd0;         // clk_74a cycles since the last write / save
     reg  [1:0]  nv_state   = 2'd0;          // 0 idle, 1 command raised, 2 waiting for done
+    reg  [28:0] boot_timer = 29'd0;         // cycles since loading completed
+    // dataslot_allcomplete cannot gate the saves: the bridge clears it when
+    // the APF reads the slot to execute OUR write command, and raises it
+    // again only on the host's own all-complete, after the initial load --
+    // so gating on it allowed exactly one save per session (measured on the
+    // panel). Latch its first rising edge instead.
+    reg         nv_loaded  = 1'b0;
     localparam  NV_SETTLE  = 28'd148_500_000;   // 2 s at 74.25 MHz
+    localparam  NV_BOOT    = 29'd371_250_000;   // 5 s: one save after loading regardless
+    // status for the overlay: 0 a write was seen (sticky), 1 pending, 2 loaded
+    // latch, 3 ack seen (sticky), 4 last error nonzero, 5-7 completed saves
+    reg  [2:0]  nv_saves = 3'd0;
+    reg  [7:0]  nv_stat = 8'd0;
     always_ff @(posedge clk_74a) begin
-        inmenu_d <= inmenu_s;
+        nv_dirty_d <= nv_dirty_s; inmenu_d <= inmenu_s; allc_d <= dataslot_allcomplete;
         target_dataslot_read     <= 1'b0;
         target_dataslot_getfile  <= 1'b0;
         target_dataslot_openfile <= 1'b0;
@@ -622,22 +634,28 @@ module core_top
         target_dataslot_slotoffset <= 32'd0;
         target_dataslot_bridgeaddr <= 32'h2000_0000;
         target_dataslot_length     <= 32'h400;
-        if (nv_dirty_s) begin nv_pending <= 1'b1; nv_timer <= 28'd0; end
+        if (dataslot_allcomplete) nv_loaded <= 1'b1;
+        if (nv_loaded && boot_timer != NV_BOOT) boot_timer <= boot_timer + 29'd1;
+        if (nv_dirty_s != nv_dirty_d) begin nv_pending <= 1'b1; nv_timer <= 28'd0; nv_stat[0] <= 1'b1; end
         else if (nv_timer != NV_SETTLE) nv_timer <= nv_timer + 28'd1;
+        nv_stat[1] <= nv_pending; nv_stat[2] <= nv_loaded; nv_stat[7:5] <= nv_saves;
         case (nv_state)
             2'd0: begin
                 target_dataslot_write <= 1'b0;
-                if (nv_pending && dataslot_allcomplete && (nv_timer == NV_SETTLE || (inmenu_s && !inmenu_d))) begin
+                if ((nv_pending && nv_loaded && (nv_timer == NV_SETTLE || (inmenu_s && !inmenu_d)))
+                    || (boot_timer == NV_BOOT - 29'd1)) begin
                     target_dataslot_write <= 1'b1;      // rising edge starts the command
                     nv_pending <= 1'b0;
                     nv_state   <= 2'd1;
                 end
             end
-            2'd1: if (target_dataslot_ack) begin target_dataslot_write <= 1'b0; nv_state <= 2'd2; end
-            2'd2: if (target_dataslot_done) nv_state <= 2'd0;
+            2'd1: if (target_dataslot_ack) begin target_dataslot_write <= 1'b0; nv_stat[3] <= 1'b1; nv_state <= 2'd2; end
+            2'd2: if (target_dataslot_done) begin nv_stat[4] <= (target_dataslot_err != 3'd0); nv_saves <= nv_saves + 3'd1; nv_state <= 2'd0; end
             default: nv_state <= 2'd0;
         endcase
     end
+    wire [7:0] nv_stat_s;
+    synch_3 #(.WIDTH(8)) sync_nvstat(nv_stat, nv_stat_s, clk_sys);
     // the core's second NVRAM port: a load write wins, else the unloader's read
     wire       po_nv_we   = nv_dl_download && nv_dl_index == 16'h1 && nv_dl_wr;
     wire [9:0] po_nv_addr = po_nv_we ? nv_dl_addr[9:0] : nv_rd_addr[9:0];
@@ -1055,6 +1073,7 @@ module core_top
         .nv_q             ( nv_rd_data   ),
         .nv_clear         ( nvclear_sw   ),
         .nv_dirty         ( po_nv_dirty  ),
+        .ext_stat         ( nv_stat_s    ),
         .dl_active        ( ioctl_download ),
         .dl_addr          ( dl_addr      ),
         .dl_data          ( dl_data      ),
