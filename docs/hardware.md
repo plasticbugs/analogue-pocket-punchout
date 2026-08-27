@@ -529,7 +529,9 @@ latches (parameter bytes 8, 4 and 0).
 * **ROM.** The 16 KB speech ROM is in block RAM, filled by the loader from
   image offset 0x56C00 (the same bytes `po_romload` also carries to SDRAM at
   0x50000, now unused there), so speech needs no SDRAM arbitration.
-* **Mix.** MAME routes the 2A03 and the VLM5030 into the speaker at 0.5 each;
-  the core does the same, the VLM's 10 bits left-justified to 16 and held
-  between its 8 kHz samples, sampled at the sound board's rate.
+* **Mix.** MAME routes the 2A03 and the VLM5030 into the speaker at 0.5 each.
+  The core has the VLM at 5/8 to the board's 1/2 -- judged a little quiet on
+  the Pocket at equal weight -- its 10 bits left-justified to 16 and held
+  between its 8 kHz samples, sampled at the sound board's rate, the sum
+  saturated.
 

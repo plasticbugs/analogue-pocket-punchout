@@ -607,6 +607,10 @@ measured until the photograph.
 
 ### The overlay, and why the next report will be specific
 
+(Since v0.1.0-alpha.3 the overlay, probe, video-path and render-test switches
+are not in the Pocket menu; the RTL still has them, off by default. Their
+`interact.json` entries are in the git history.)
+
 METHODOLOGY §4 says to add the diagnostic overlay before it is needed; it was
 needed before it existed. It is in now: eight squares in the bottom rows of the
 fight screen, behind **Diagnostics Overlay** in the Pocket menu:

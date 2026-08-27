@@ -363,15 +363,22 @@ module punchout_core (
     wire signed [9:0] vlm_sample;
     wire              vlm_sample_ce;
     wire signed [15:0] snd_sample;
-    // MAME gives the 2A03 and the VLM5030 equal weight into the speaker. The
-    // VLM's 10 bits are left-justified to 16 and each source contributes half;
-    // the VLM holds its value between its 8 kHz samples (the chip's DAC does
-    // the same), sampled here at the sound board's rate.
+    // MAME gives the 2A03 and the VLM5030 equal weight into the speaker; on
+    // the Pocket that left the announcer a little quiet against the music, so
+    // he is at 5/8 to the board's 1/2 (+25%). The VLM's 10 bits are
+    // left-justified to 16 and held between its 8 kHz samples (the chip's DAC
+    // does the same), sampled here at the sound board's rate; the sum is
+    // saturated, since 5/8 + 1/2 can exceed full scale on a loud phrase over
+    // loud music.
     logic signed [15:0] vlm_held;
+    wire  signed [17:0] snd_h = {{3{snd_sample[15]}}, snd_sample[15:1]};   // /2
+    wire  signed [17:0] vlm_h = {{3{vlm_held[15]}},   vlm_held[15:1]};     // /2
+    wire  signed [17:0] vlm_e = {{5{vlm_held[15]}},   vlm_held[15:3]};     // /8
+    wire  signed [17:0] mix   = snd_h + vlm_h + vlm_e;
     always_ff @(posedge clk) begin
         if (mach_reset) vlm_held <= '0;
         else if (vlm_sample_ce) vlm_held <= {vlm_sample, 6'b0};
-        if (audio_ce) audio <= (snd_sample >>> 1) + (vlm_held >>> 1);
+        if (audio_ce) audio <= (mix > 18'sd32767) ? 16'sd32767 : (mix < -18'sd32768) ? -16'sd32768 : mix[15:0];
     end
     po_vlm5030 u_vlm (
         .clk(clk), .reset(mach_reset),

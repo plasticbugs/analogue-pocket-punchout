@@ -80,11 +80,15 @@ Not yet:
 * **Platform artwork.** No banner image ships, so the Pocket shows its default
   one. Cosmetic.
 
-Hardware status: **plays on the Pocket** -- game logic, music, both screens,
-sprites. Getting the SDRAM path from garbage to correct took four faults, all
-of them in the gap between simulation and silicon; `docs/verification.md`
-tells that story, and the **Diagnostics Overlay** in the core menu is what made
-each one a one-step diagnosis.
+Hardware status: **plays on the Pocket** -- game logic, music, speech, both
+screens, sprites. Getting the SDRAM path from garbage to correct took four
+faults, all of them in the gap between simulation and silicon, and the black
+bar a fifth; `docs/verification.md` tells that story. The diagnostic overlay,
+probe and render-test switches that made each one a one-step diagnosis are
+still in the RTL (`ovl_mode`, `probe_page`, `vid_mode`, `rtest` in
+`punchout_core`), off by default and no longer in the Pocket menu; re-adding
+their `interact.json` entries (git history, before v0.1.0-alpha.3) brings them
+back.
 
 ## Building
 

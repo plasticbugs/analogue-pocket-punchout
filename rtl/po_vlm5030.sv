@@ -148,7 +148,7 @@ module po_vlm5030 (
 
     // ---- the per-sample sequencer
     typedef enum logic [4:0] {
-        S_IDLE, S_TICK, S_CMD_W, S_CMD_A, S_CMD_B, S_FRAME_A, S_FRAME_B, S_FRAME_DONE, S_INTERP, S_LERP0, S_LERP1, S_EXCITE,
+        S_IDLE, S_TICK, S_CMD_W, S_CMD_A, S_CMD_B, S_FRAME_A, S_FRAME_B, S_FRAME_DONE, S_INTERP, S_LERP0, S_LERP1, S_LERP2, S_LERP3, S_EXCITE,
         S_LAT_U0, S_LAT_U1, S_LAT_U2, S_LAT_X0, S_LAT_X1, S_LAT_X2, S_OUT
     } seq_t;
     seq_t        seq;
@@ -166,6 +166,8 @@ module po_vlm5030 (
     logic [2:0]  eff_r;              // the interpolation weight for this period
     logic [3:0]  ki;                 // which coefficient is being interpolated
     logic signed [13:0] lo_r, lt_r;  // its old and target values, fetched a clock ahead
+    logic signed [13:0] ld_r;        // target - old
+    logic signed [13:0] lm_r;        // (target - old) * weight, the weight 1..4 as shift-adds
     integer i;
 
     // interpolation, all twelve at once (cheap: 4 x 14-bit adds each)
@@ -182,8 +184,15 @@ module po_vlm5030 (
     function automatic logic signed [7:0] lerp_p(input logic signed [13:0] o, input logic signed [13:0] t, input [2:0] e);
         logic signed [13:0] r; r = lerp(o, t, e); lerp_p = r[7:0];
     endfunction
-    function automatic logic signed [9:0] lerp_k_r(input logic signed [13:0] o, input logic signed [13:0] t, input [2:0] e);
-        logic signed [13:0] r; r = lerp(o, t, e); lerp_k_r = r[9:0];
+    // the last step: old + (product / 4), truncating toward zero
+    function automatic logic signed [9:0] lerp_fin_k(input logic signed [13:0] o, input logic signed [13:0] m);
+        logic signed [13:0] r; r = o + div4(m); lerp_fin_k = r[9:0];
+    endfunction
+    function automatic logic [6:0] lerp_fin_e(input logic signed [13:0] o, input logic signed [13:0] m);
+        logic signed [13:0] r; r = o + div4(m); lerp_fin_e = r[6:0];
+    endfunction
+    function automatic logic signed [7:0] lerp_fin_p(input logic signed [13:0] o, input logic signed [13:0] m);
+        logic signed [13:0] r; r = o + div4(m); lerp_fin_p = r[7:0];
     endfunction
     // signed views of the unsigned state, for the interpolation
     wire signed [13:0] old_energy_s = {7'b0, old_energy}, target_energy_s = {7'b0, target_energy};
@@ -343,10 +352,20 @@ module po_vlm5030 (
                     else                  begin lo_r <= old_pitch_s;  lt_r <= target_pitch_s; end
                     seq <= S_LERP1;
                 end
-                S_LERP1: begin
-                    if (ki < 4'd10)       current_k[ki] <= lerp_k_r(lo_r, lt_r, eff_r);
-                    else if (ki == 4'd10) current_energy <= lerp_e(lo_r, lt_r, eff_r);
-                    else if (old_pitch > 8'sd1) current_pitch <= lerp_p(lo_r, lt_r, eff_r);
+                S_LERP1: begin ld_r <= lt_r - lo_r; seq <= S_LERP2; end
+                S_LERP2: begin
+                    case (eff_r)
+                        3'd1:    lm_r <= ld_r;
+                        3'd2:    lm_r <= ld_r <<< 1;
+                        3'd3:    lm_r <= ld_r + (ld_r <<< 1);
+                        default: lm_r <= ld_r <<< 2;
+                    endcase
+                    seq <= S_LERP3;
+                end
+                S_LERP3: begin
+                    if (ki < 4'd10)       current_k[ki] <= lerp_fin_k(lo_r, lm_r);
+                    else if (ki == 4'd10) current_energy <= lerp_fin_e(lo_r, lm_r);
+                    else if (old_pitch > 8'sd1) current_pitch <= lerp_fin_p(lo_r, lm_r);
                     if (ki == 4'd11) seq <= S_EXCITE; else begin ki <= ki + 4'd1; seq <= S_LERP0; end
                 end
                 S_EXCITE: begin
