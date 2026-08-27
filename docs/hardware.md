@@ -17,7 +17,7 @@ for this core (see §11).
 |---|---|---|---|
 | Zilog Z80 | main CPU | **4.000 MHz** (8 MHz XTAL ÷2) | `Z80(config, m_maincpu, XTAL(8'000'000)/2)` |
 | Ricoh RP2A03 | sound CPU **and** APU | **1.789772 MHz** (`NTSC_APU_CLOCK`) | 21.477272 MHz ÷12 |
-| Sanyo VLM5030 | LPC speech | **3.579545 MHz** (`RP2A03_NTSC_XTAL/6`) | 21.477272 MHz ÷6 -- not yet implemented; its BUSY line is modelled (`po_vlm_busy`), because the game sequences display cues against it |
+| Sanyo VLM5030 | LPC speech | **3.579545 MHz** (`RP2A03_NTSC_XTAL/6`) | `po_vlm5030`: sample clock 3579545/440 = 8135 Hz from a 96 MHz phase accumulator |
 | — | pixel clock | derived from a 20.16 MHz XTAL; exact raw params **not modelled by MAME** | driver TODO |
 
 Two monitors, both 256×224 at 60 Hz nominal. MAME declares
@@ -498,4 +498,38 @@ between them and the box flickered left on every landed punch. So NMI is
 raised at row 520 (`NMI_ROW` in `punchout_video`), 4.9 ms before the
 snapshot; the last fight lines are still being drawn from the previous
 snapshot while the handler runs. Once per frame is all the game can observe.
+
+## VLM5030
+
+`rtl/po_vlm5030.sv` is a transcription of MAME's `vlm5030.cpp` (Tatsuyuki
+Satoh; coefficient tables from decaps of the chip by ogoun and John McMaster).
+Its executable spec is `tools/vlm5030.py`, and `sim/run_vlm.sh` holds the RTL
+to it sample for sample on every phrase the game uses at each speed the game
+latches (parameter bytes 8, 4 and 0).
+
+* **Pins.** Data byte at port 04; LS259 bits 4/5/6 are RST/ST/VCU; BSY is read
+  on DSW1 bit 4, active low. RST falling latches the parameter byte from the
+  data bus (bits 0-1 interpolation step, 3-5 speed, 6-7 pitch offset); RST
+  rising while busy resets the chip. ST rising raises BSY; ST falling looks the
+  phrase up -- table entry at `(data & 0xfe) | (data & 1) << 8`, two bytes
+  big-endian -- and starts it. VCU (direct addressing) is unused by this game.
+* **Frames.** 48-bit LPC frames: pitch 5 bits at bit 1, energy 5 bits at bit
+  6, K10..K1 at bits 11, 14, 17, 20, 23, 26, 29, 33, 37, 42 (3,3,3,3,3,3,4,4,5,6
+  bits). A command byte with bit 0 set is a silent run of `((cmd>>2)+1)*2`
+  frames, or with bit 1 also set the end of speech. Each frame is four
+  interpolation periods of `frame_size` samples (40/30/20/60/50 by speed);
+  energy, pitch and the ten K's are interpolated in quarters, C integer
+  division truncating toward zero.
+* **Synthesis.** Excitation is a pulse of `energy` every `pitch` samples, or
+  +/-energy noise when pitch is 0 or 1 (a 16-bit LFSR here and in the model;
+  MAME uses its random generator there, the one place bit-exactness with MAME
+  is not claimed). A ten-stage lattice filter with `/512`, the output clamped
+  to 10 bits. After the end marker: one more period of samples, one sample,
+  BSY drops.
+* **ROM.** The 16 KB speech ROM is in block RAM, filled by the loader from
+  image offset 0x56C00 (the same bytes `po_romload` also carries to SDRAM at
+  0x50000, now unused there), so speech needs no SDRAM arbitration.
+* **Mix.** MAME routes the 2A03 and the VLM5030 into the speaker at 0.5 each;
+  the core does the same, the VLM's 10 bits left-justified to 16 and held
+  between its 8 kHz samples, sampled at the sound board's rate.
 

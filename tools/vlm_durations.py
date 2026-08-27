@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Phrase lengths of the VLM5030 speech ROM, as the chip would time them.
 
-The core has no VLM5030 yet, and the game paces its display against the
-chip's BUSY line: with BUSY never asserted, a knock-down phrase "finishes"
-instantly and the game runs its round-start flash cue in the middle of the
-gloat (the black bar). Until the chip itself is implemented, BUSY is held for
-each phrase's true duration, which is a pure function of the ROM bytes and
-the speed parameter -- this script walks the frames exactly as MAME's
-vlm5030.cpp does and emits the table the RTL holds.
+A measurement tool: the game paces its display against the chip's BUSY line
+(with BUSY never asserted, a knock-down phrase "finished" instantly and the
+game ran its pre-bout blink cue in the middle of the gloat -- the black bar).
+This walks the frames exactly as MAME's vlm5030.cpp does and lists each
+phrase's length. The chip itself is rtl/po_vlm5030.sv now; the table this
+emitted once fed an interim BUSY-only model.
 
-  python3 tools/vlm_durations.py build/punchout.rom rtl/po_vlm_phrases.svh
+  python3 tools/vlm_durations.py build/punchout.rom build/vlm_frames.svh   # listing + a table nobody includes now
 
 Timing (vlm5030.cpp): ST high -> BSY high; ST low -> speech starts, and
 every voiced frame lasts FR_SIZE=4 interpolation periods of frame_size

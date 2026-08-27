@@ -68,13 +68,11 @@ Working and verified:
   vblank NMI — booted from reset in simulation and held to MAME frame for frame
   through attract mode.
 * RP2A03 sound board: T65 with decimal mode disabled, plus the NES APU.
+* VLM5030 announcer, bit-exact against a transcription of MAME's synthesiser
+  on every phrase the game speaks, at every speed it uses.
 
 Not yet:
 
-* **Speech.** The VLM5030 announcer is not implemented, so the game is silent
-  where he speaks. Its BUSY line *is* modelled, to the chip's timing: the game
-  paces its display cues against it, and without it the pre-bout fighter
-  introduction blinked in the ring during the opponent's gloat.
 * **Persistent records.** The NVRAM works within a session but is not yet saved
   to the SD card.
 * **Audio verified against MAME.** The sound path is built and the clock rates
@@ -107,7 +105,8 @@ ROM=build/punchout.rom ./sim/run_video.sh   # RTL vs reference renderer
 ./tools/capture_attract.sh                  # MAME references, no input
 ROM=build/punchout.rom ./sim/run_system.sh  # boot the machine, compare frames
 PO_LOSE=1 SYSREF=<gloat captures> FRAMES="7956 8000 8100" ./sim/run_system.sh  # play the losing fight
-python3 tools/vlm_durations.py build/punchout.rom rtl/po_vlm_phrases.svh   # regenerate the speech-length table
+python3 tools/vlm5030.py build/punchout.rom build/vlm   # reference speech for every phrase
+./sim/run_vlm.sh                                          # VLM5030 RTL vs the model, sample for sample
 ```
 
 `docs/hardware.md` is the machine description everything is built from, and
@@ -122,6 +121,9 @@ looked like on the way.
 * T65 6502 by Daniel Wallner and MikeJ (BSD), via MiSTer's VIC20 core.
 * NES APU by Kitrinx (GPLv3), via
   [NES_MiSTer](https://github.com/MiSTer-devel/NES_MiSTer).
+* VLM5030 after MAME's `vlm5030.cpp` by Tatsuyuki Satoh (BSD-3-Clause), with
+  the chip's coefficient tables recovered from decaps by ogoun and John
+  McMaster.
 * The Pocket platform layer from the openFPGA framework.
 
 GPLv3. See `LICENSE`.

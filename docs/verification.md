@@ -520,11 +520,12 @@ rows 20-22 and 0x24 into the VS at frames 7800-7999, exactly the Pocket's
 bar. Every RAM, port and path probed below was behaving; the Z80 was running
 the game correctly on a wrong input.
 
-The fix, `rtl/po_vlm_busy.sv`, holds BUSY for each phrase's true length --
-from `tools/vlm_durations.py`, which walks the speech ROM's frames the way
-MAME's `vlm5030.cpp` does, scaled by the speed parameter the game latches on
-RST, at the chip's 3579545/440 Hz sample clock. The voice itself is still to
-come; this is its timing. Validation: the full-system bench now plays the
+The first fix, an interim `po_vlm_busy`, held BUSY for each phrase's true
+length -- from `tools/vlm_durations.py`, which walks the speech ROM's frames
+the way MAME's `vlm5030.cpp` does, scaled by the speed parameter the game
+latches on RST, at the chip's 3579545/440 Hz sample clock. The chip itself,
+`rtl/po_vlm5030.sv`, replaced it the same day (see "VLM5030" below) and
+carries the identical timing. Validation: the full-system bench now plays the
 same losing fight as the MAME script (`PO_LOSE=1`) and is compared at frames
 7956, 8000 and 8100 against MAME's captures of the gloat.
 
@@ -784,6 +785,19 @@ the chip cannot be read or written at this clock and phase whatever the loader
 did; ROM red with PATTERN green means the loader. The timing setting exists so
 the capture point can be flipped on the panel without a rebuild; its alternate
 is the old READ+3 and is expected to turn square 4 red.
+
+## VLM5030 -- bit-exact against the reference model
+
+`tools/vlm5030.py` transcribes MAME's `vlm5030.cpp` with C integer semantics;
+`sim/run_vlm.sh` loads the speech ROM into `po_vlm5030` through the loader
+port, drives RST/ST/data as the game does, and compares every output sample.
+All fifteen phrases the game uses (table bytes 00 04 0e 10 14 1c 20 28 34 40
+48 4a 4c 4e 50) are identical at parameter 8, 4 and 0 -- 1,860 to 41,840
+samples each. Two bugs the bench found on the way: the phrase-address fetch
+captured the ROM bytes one clock early (every phrase started at a garbage
+address), and the silent-frame count needed 10 bits (up to 520). Unvoiced
+samples use the same LFSR in model and RTL; MAME uses its own random source
+there, so that is the one respect in which MAME is not the oracle.
 
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report

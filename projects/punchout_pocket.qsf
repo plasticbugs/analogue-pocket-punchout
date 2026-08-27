@@ -21,7 +21,7 @@ set_global_assignment -name NUM_PARALLEL_PROCESSORS 1
 set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
 set_global_assignment -name SAVE_DISK_SPACE OFF
 set_global_assignment -name SMART_RECOMPILE OFF
-set_global_assignment -name SEED 1
+set_global_assignment -name SEED 3
 
 # ==============================================================================
 # Analysis & Synthesis Assignments

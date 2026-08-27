@@ -215,12 +215,21 @@ int main(int argc, char **argv) {
             if (a >= lo && a <= hi && frame >= f0 && frame <= f1)
                 printf("vw %d %d %04x %02x\n", frame, dut->dbg_ctrl_wr_vcnt, a, dut->dbg_vdata);
         }
+        // PO_WAV=<file>, PO_WAV_FROM/TO (frames): the mixed audio as raw
+        // little-endian 16-bit at the sound board's rate / 37 (~48.4 kHz)
+        if (getenv("PO_WAV") && dut->audio_ce) {
+            static FILE *wf = nullptr; static int dec = 0; static int f0 = 0, f1 = 1 << 30;
+            if (!wf) { wf = fopen(getenv("PO_WAV"), "wb");
+                       if (getenv("PO_WAV_FROM")) f0 = atoi(getenv("PO_WAV_FROM"));
+                       if (getenv("PO_WAV_TO"))   f1 = atoi(getenv("PO_WAV_TO")); }
+            if (frame >= f0 && frame <= f1 && ++dec >= 37) { dec = 0; short v = (short)dut->audio; fwrite(&v, 2, 1, wf); }
+            if (frame > f1) fflush(wf);
+        }
         if (getenv("PO_VLM")) {
             static bool pb = false;
             bool b = dut->rootp->tb_system_top__DOT__u_core__DOT__u_vlm__DOT__busy;
             if (b != pb) {
-                if (b) printf("vlm: frame %d BUSY on, table byte %02x\n", frame,
-                              dut->rootp->tb_system_top__DOT__u_core__DOT__u_vlm__DOT__dbg_phrase);
+                if (b) printf("vlm: frame %d BUSY on\n", frame);
                 else   printf("vlm: frame %d BUSY off\n", frame);
                 fflush(stdout);
             }

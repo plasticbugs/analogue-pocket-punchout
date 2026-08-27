@@ -56,8 +56,9 @@ module punchout_core (
     output wire   [7:0] vid_g,
     output wire   [7:0] vid_b,
 
-    //! ---- audio, signed, with an enable marking each new value
-    output wire signed [15:0] audio,
+    //! ---- audio, signed, with an enable marking each new value: the sound
+    //!      board and the announcer mixed equally, as MAME routes them
+    output logic signed [15:0] audio,
     output wire         audio_ce,
 
     //! ---- one pulse per frame at the start of vblank
@@ -356,12 +357,27 @@ module punchout_core (
     wire       snd_reset, vlm_rst, vlm_st, vlm_vcu;
     wire       vlm_busy;
 
-    // No VLM5030 yet, but its BUSY line is honoured: the game sequences its
-    // display against it (docs/verification.md, "the black bar").
-    po_vlm_busy u_vlm (
+    // The announcer. Its speech ROM is in block RAM, filled by the same loader
+    // bytes po_romload also carries to SDRAM; its 10-bit output is mixed with
+    // the sound board's below.
+    wire signed [9:0] vlm_sample;
+    wire              vlm_sample_ce;
+    wire signed [15:0] snd_sample;
+    // MAME gives the 2A03 and the VLM5030 equal weight into the speaker. The
+    // VLM's 10 bits are left-justified to 16 and each source contributes half;
+    // the VLM holds its value between its 8 kHz samples (the chip's DAC does
+    // the same), sampled here at the sound board's rate.
+    logic signed [15:0] vlm_held;
+    always_ff @(posedge clk) begin
+        if (mach_reset) vlm_held <= '0;
+        else if (vlm_sample_ce) vlm_held <= {vlm_sample, 6'b0};
+        if (audio_ce) audio <= (snd_sample >>> 1) + (vlm_held >>> 1);
+    end
+    po_vlm5030 u_vlm (
         .clk(clk), .reset(mach_reset),
+        .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .rst(vlm_rst), .st(vlm_st), .vcu(vlm_vcu), .data(vlm_data),
-        .busy(vlm_busy));
+        .busy(vlm_busy), .sample(vlm_sample), .sample_ce(vlm_sample_ce));
 
     // Both NMIs fire once per frame, from the raster -- earlier in the frame
     // than the board's vblank, so the handlers' writes are all done before the
@@ -390,7 +406,7 @@ module punchout_core (
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .vblank_rise(nmi_pulse),
         .soundlatch(soundlatch), .soundlatch2(soundlatch2),
-        .sample(audio), .sample_ce(audio_ce),
+        .sample(snd_sample), .sample_ce(audio_ce),
         .dbg_dma_req(dbg_dma_req));
 
     // The speech chip is not implemented yet. Its control lines are decoded and
