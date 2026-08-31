@@ -1,4 +1,4 @@
-# Punch-Out!! for Analogue Pocket
+# Punch-Out!! and Super Punch-Out!! for Analogue Pocket
 
 An openFPGA core for **Punch-Out!!** and **Super Punch-Out!!** (Nintendo, 1984),
 reimplementing the arcade hardware: a Z80 main board, an RP2A03 sound board (a
