@@ -11,6 +11,8 @@ set -e
 cd "$(dirname "$0")/.."
 OUT=${OUT:-artifacts}
 ROMSET=${ROMSET:-mame-romset}
+# GAME picks the MAME set: punchout, or spnchout for Super Punch-Out!!
+GAME=${GAME:-punchout}
 
 # Frames picked from a 9000-frame scan of the big-sprite control registers
 # rather than by eye, so the set actually covers what the hardware can do:
@@ -30,7 +32,7 @@ ROMPATH="$ROMSET"
 SCRATCH=""
 if [ -d "$ROMSET" ]; then
     SCRATCH=$(mktemp -d)
-    (cd "$ROMSET" && zip -q -X "$SCRATCH/punchout.zip" ./*.*)
+    (cd "$ROMSET" && zip -q -X "$SCRATCH/$GAME.zip" ./*.*)
     ROMPATH="$SCRATCH"
     trap 'rm -rf "$SCRATCH"' EXIT
 else
@@ -47,12 +49,12 @@ SYNTH=${SYNTH:-"900:1 900:3"}
 for f in $FRAMES; do
     tag=$(printf "%04d" "$f")
     PO_OUT="$OUT" PO_FRAME="$f" PO_TAG="$tag" \
-    mame punchout -rompath "$ROMPATH" -video none -sound none -nothrottle \
+    mame "$GAME" -rompath "$ROMPATH" -video none -sound none -nothrottle \
         -skip_gameinfo -seconds_to_run 3600 \
         -snapshot_directory "$OUT/snap_$tag" -cfg_directory build/mamecfg \
         -nvram_directory build/mamecfg -autoboot_script tools/dumpstate.lua \
         2>&1 | grep -E '^\[po\]' || true
-    snap=$(ls "$OUT/snap_$tag"/punchout/*.png 2>/dev/null | head -1)
+    snap=$(ls "$OUT/snap_$tag"/"$GAME"/*.png 2>/dev/null | head -1)
     [ -n "$snap" ] || { echo "no snapshot for frame $f"; exit 1; }
     mv "$snap" "$OUT/mame_$tag.png"
     rm -rf "$OUT/snap_$tag"
@@ -63,12 +65,12 @@ for spec in $SYNTH; do
     f=${spec%%:*}; bank=${spec##*:}
     tag=$(printf "%04dp%s" "$f" "$bank")
     PO_OUT="$OUT" PO_FRAME="$f" PO_TAG="$tag" PO_PALBANK="$bank" \
-    mame punchout -rompath "$ROMPATH" -video none -sound none -nothrottle \
+    mame "$GAME" -rompath "$ROMPATH" -video none -sound none -nothrottle \
         -skip_gameinfo -seconds_to_run 3600 \
         -snapshot_directory "$OUT/snap_$tag" -cfg_directory build/mamecfg \
         -nvram_directory build/mamecfg -autoboot_script tools/dumpstate.lua \
         2>&1 | grep -E '^\[po\]' || true
-    snap=$(ls "$OUT/snap_$tag"/punchout/*.png 2>/dev/null | head -1)
+    snap=$(ls "$OUT/snap_$tag"/"$GAME"/*.png 2>/dev/null | head -1)
     [ -n "$snap" ] && mv "$snap" "$OUT/mame_$tag.png"
     rm -rf "$OUT/snap_$tag"
     echo "captured $tag (palettebank $bank)"

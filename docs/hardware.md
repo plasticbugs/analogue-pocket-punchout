@@ -574,3 +574,31 @@ its first version pinned at +32767 because a bare concatenation is unsigned
 in SystemVerilog and made the arithmetic shifts logical -- every extension
 now goes through a declared-signed variable.
 
+## Super Punch-Out!!
+
+The same CHP1 board, so the core plays it with the same bitstream: identical
+video hardware, identical memory and I/O map, and a ROM image with the same
+region layout (`spnchout.mra`; its gfx3 sockets 2u/3u carry 16 KB parts where
+Punch-Out!! has 8 KB, which fills one of the gaps but leaves the region the
+same size). The differences are all additive:
+
+* **RP5C01 + RP5H01 on I/O ports 05-07** (`rtl/po_protect.sv`). Punch-Out!!
+  writes zeroes to those ports in an init loop and never reads them -- measured
+  over 3000 frames -- so the block is always present and there is nothing to
+  detect or switch. See `docs/verification.md` for how it was verified.
+* **A fourth button on IN0 d6, active low.** It is the only active-low input on
+  the board. Punch-Out!! leaves the pin unconnected and is measurably
+  indifferent to it (a full fight in MAME is pixel-identical either way), so
+  the core wires it for both games. It defaults to Start -- Select still
+  inserts coins -- and the menu can move it to L or R.
+* **COIN2 on IN1 d5**, not wired: the Pocket has one coin button.
+* Different coinage DIP meanings on DSW1; the switch bits themselves are the
+  same, so the menu entries are unchanged.
+
+The RP5C01 is wired with OSCIN to Vcc and no battery, so it never ticks and its
+ALARM output stays high. What the game uses is the register file's write
+masking -- a register that holds three bits reads back three bits -- and the 13
+nibbles of scratch RAM that BLOCK10/BLOCK11 mode reaches. The RP5H01's PROM is
+unprogrammed, a known 16-byte pattern, clocked by a counter the game resets and
+steps through ports 05 and 06.
+

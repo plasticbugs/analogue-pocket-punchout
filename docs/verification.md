@@ -845,6 +845,37 @@ Pocket, and the T65 is the same core MiSTer ships. What this bench adds is that
 everything the core wraps around the APU (clocking, DC blocker, mix,
 decimation) turns MAME's register stream into the same music.
 
+## Super Punch-Out!! -- protection access for access, video pixel for pixel
+
+The second game runs on the same board and the same bitstream, so what needed
+verifying was the protection hardware, the ROM image, and that nothing about
+it disturbs Punch-Out!!.
+
+* **The image.** `spnchout.mra` builds a 371,712-byte image with the same
+  region layout as Punch-Out!!'s; `tools/mra_build.py` checks every part's
+  CRC32 and the finished md5.
+* **The protection.** `scratchpad/prot.lua` logs every access the real game
+  makes to I/O ports 05-07 in MAME -- 64,719 of them over 1800 frames.
+  `tools/protection.py` is a transcription of MAME's `rp5c01.cpp` and
+  `rp5h01.cpp`, and replaying the trace through it reproduces **all 5853
+  reads exactly**. `sim/run_protect.sh` then replays the same trace through
+  `rtl/po_protect.sv`: 58,866 writes driven in, 5853 reads compared, **0
+  mismatched**.
+* **It does not disturb Punch-Out!!.** That game writes zeroes to ports 05-07
+  in an init loop and, over 3000 frames, never reads them -- so the block is
+  invisible to it. Its IN0 d6 is likewise unconnected: a full scripted fight
+  in MAME is pixel-identical with the bit high or low, which is what lets the
+  fourth button be wired unconditionally.
+* **Video.** Eight frozen Super Punch-Out!! states (attract, gameplay, both
+  forced palette banks) render pixel-identical to MAME in the reference
+  renderer, and pixel-identical to the reference in the RTL -- the same two
+  gates Punch-Out!! passes.
+
+The fourth button matters: with IN0 d6 tied low, as the first version of the
+core left it, the button reads as permanently held and a scripted fight
+diverges from MAME within 200 frames. Tied high (released) it does not. That
+is why the pin is wired rather than tied off.
+
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report
   worst-case cycles per line, not just pixel equality.

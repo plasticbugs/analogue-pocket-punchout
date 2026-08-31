@@ -6,7 +6,7 @@
                 "name": "ROM Set",
                 "id": 0,
                 "required": true,
-                "parameters": "0x8",
+                "parameters": "0x9",
                 "filename": "punchout.rom",
                 "extensions": [
                     "rom"

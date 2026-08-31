@@ -224,9 +224,18 @@ module punchout_main (
     // DSW1 bit 4 is not a switch: it is the VLM5030's busy line, active low.
     wire [7:0] dsw1_rd = {dsw1[7:5], ~vlm_busy, dsw1[3:0]};
 
+    // Super Punch-Out!!'s RP5C01 + RP5H01 on ports 05-07. Always present:
+    // Punch-Out!! writes zeroes there in an init loop and never reads them, so
+    // the same bitstream runs either game with nothing to detect or select.
+    wire [7:0] prot_q;
+    po_protect u_prot (
+        .clk(clk), .reset(reset),
+        .addr(A[7:0]), .din(cpu_do), .io_wr(io_wr_stb), .dout(prot_q));
+
     logic [7:0] io_q;
     always_comb begin
-        case (A[1:0])
+        if (A[3:0] == 4'h7) io_q = prot_q;      // spnchout protection read
+        else case (A[1:0])
             2'd0: io_q = in0;
             2'd1: io_q = in1;
             2'd2: io_q = dsw2;

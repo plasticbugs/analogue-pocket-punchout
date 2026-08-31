@@ -6,12 +6,14 @@ set -e
 cd "$(dirname "$0")/.."
 OUT=${OUT:-artifacts_sys}
 ROMSET=${ROMSET:-mame-romset}
+# GAME picks the MAME set: punchout, or spnchout for Super Punch-Out!!
+GAME=${GAME:-punchout}
 FRAMES=${FRAMES:-"60 150 300 600 900"}
 
 ROMPATH="$ROMSET"
 if [ -d "$ROMSET" ]; then
     SCRATCH=$(mktemp -d)
-    (cd "$ROMSET" && zip -q -X "$SCRATCH/punchout.zip" ./*.*)
+    (cd "$ROMSET" && zip -q -X "$SCRATCH/$GAME.zip" ./*.*)
     ROMPATH="$SCRATCH"
     trap 'rm -rf "$SCRATCH"' EXIT
 else
@@ -22,7 +24,7 @@ rm -rf "$OUT"; mkdir -p "$OUT" build/mamecfg
 for f in $FRAMES; do
     tag=$(printf "%04d" "$f")
     PO_OUT="$OUT" PO_FRAME="$f" PO_TAG="$tag" PO_NOINPUT=1 \
-    mame punchout -rompath "$ROMPATH" -video none -sound none -nothrottle \
+    mame "$GAME" -rompath "$ROMPATH" -video none -sound none -nothrottle \
         -skip_gameinfo -seconds_to_run 3600 -snapshot_directory "$OUT/snap" \
         -cfg_directory build/mamecfg -nvram_directory build/mamecfg \
         -autoboot_script tools/dumpstate.lua 2>&1 | grep -E '^\[po\]' | tail -1

@@ -50,7 +50,7 @@ verilator --lint-only $FLAGS --top-module punchout_video \
 
 echo "--- main board (Z80) ---"
 verilator --lint-only $FLAGS --top-module punchout_main \
-    rtl/po_ram.sv rtl/punchout_main.sv rtl/tv80s_cen.v \
+    rtl/po_ram.sv rtl/po_protect.sv rtl/punchout_main.sv rtl/tv80s_cen.v \
     modules/cpu-tv80/tv80_core.v modules/cpu-tv80/tv80_alu.v \
     modules/cpu-tv80/tv80_mcode.v modules/cpu-tv80/tv80_reg.v
 
@@ -62,7 +62,7 @@ verilator --lint-only $FLAGS --top-module punchout_sound \
 echo "--- whole machine ---"
 verilator --lint-only $FLAGS --top-module punchout_core \
     rtl/po_ram.sv rtl/po_romload.sv rtl/sdram16.sv rtl/po_sdram_test.sv rtl/punchout_video.sv \
-    rtl/punchout_main.sv rtl/punchout_sound.sv rtl/po_vlm5030.sv rtl/punchout_core.sv \
+    rtl/po_protect.sv rtl/punchout_main.sv rtl/punchout_sound.sv rtl/po_vlm5030.sv rtl/punchout_core.sv \
     rtl/tv80s_cen.v modules/cpu-tv80/tv80_core.v modules/cpu-tv80/tv80_alu.v \
     modules/cpu-tv80/tv80_mcode.v modules/cpu-tv80/tv80_reg.v \
     modules/sound-apu/apu_savestate_stub.sv modules/sound-apu/apu.sv sim/t65_stub.sv

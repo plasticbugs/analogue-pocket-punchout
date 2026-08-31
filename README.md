@@ -1,9 +1,16 @@
 # Punch-Out!! for Analogue Pocket
 
-An openFPGA core for **Punch-Out!!** (Nintendo, 1984), reimplementing the arcade
-hardware: a Z80 main board, an RP2A03 sound board (a 6502 with the NES APU on
-the same die), two 256×224 monitors, and the two zooming "big sprite" tilemaps
-that draw the boxers.
+An openFPGA core for **Punch-Out!!** and **Super Punch-Out!!** (Nintendo, 1984),
+reimplementing the arcade hardware: a Z80 main board, an RP2A03 sound board (a
+6502 with the NES APU on the same die), a VLM5030 speech synthesiser, two
+256×224 monitors, and the two zooming "big sprite" tilemaps that draw the
+boxers.
+
+Both games ran on the same CHP1 board, so one bitstream plays either — pick the
+image from **ROM Set** in the core menu. Super Punch-Out!! adds an RP5C01 clock
+and an RP5H01 one-time PROM as copy protection, which the core implements; the
+chips sit on I/O ports Punch-Out!! never reads, so nothing has to be detected or
+switched.
 
 The cabinet had **two stacked monitors**. The Pocket has one, so the core
 composites both into a single 512×672 raster: the info screen at native size
@@ -31,12 +38,15 @@ ROM, all the video RAM — is block RAM and single cycle.
 2. Build the ROM image and copy it to `Assets/punchout/common/punchout.rom`:
 
    ```sh
-   python3 mra_build.py punchout.mra punchout.zip
+   python3 mra_build.py punchout.mra punchout.zip     # Punch-Out!!
+   python3 mra_build.py spnchout.mra spnchout.zip     # Super Punch-Out!!
    ```
 
    Nothing but Python 3 is needed. It checks every ROM's CRC32 and verifies the
    finished 371,712-byte image against a known md5, so a wrong or bad romset is
-   reported rather than silently built.
+   reported rather than silently built. Both images have the same layout and
+   size; put either or both in `Assets/punchout/common/` and choose one from
+   **ROM Set** in the core menu.
 
 ## Controls
 
@@ -46,12 +56,14 @@ ROM, all the video RAM — is block RAM and single cycle.
 | Y, or L | Left punch |
 | X, or R | Right punch |
 | B or A | KO punch |
+| Start | Super Punch-Out!!'s fourth button (menu can move it to L or R) |
 | Select | Coin |
-| Start | Coin |
 
-There is no start button on this machine: inserting a coin begins play, so both
-Select and Start are wired to the coin slot. Top row is the two jabs, bottom row
-the KO; the shoulders mirror the jabs so either hand position works.
+There is no start button on these machines: inserting a coin begins play, so
+Select is the coin slot. Top row is the two jabs, bottom row the KO; the
+shoulders mirror the jabs so either hand position works. Super Punch-Out!! has a
+fourth button, which Punch-Out!! leaves unconnected and ignores, so it is wired
+for both games and defaults to Start.
 
 ## The core menu
 
@@ -60,6 +72,8 @@ the KO; the shoulders mirror the jabs so either hand position works.
 | Reset Core | Restart the machine |
 | Reset Records | Wipe the battery RAM (high scores, play counters) |
 | Screen Shape | Arcade (square pixels) or Fill Screen |
+| ROM Set | Which game: pick `punchout.rom` or `spnchout.rom` |
+| SPO 4th Button | Start / L / R / Off — Super Punch-Out!!'s fourth button |
 | Cabinet Reverb | Off / Light / Medium / Heavy — a short, dark room around the whole mix |
 | Scanlines | Off / 25 % / 50 % / 75 % — on the fight screen, drawn at 2×, they fall on one row of each pair |
 | Shadow Mask | Off / On / rotated / 2× |
@@ -97,6 +111,10 @@ Working and verified:
   through a 900-frame round trip in simulation.
 * Cabinet reverb, scanlines and shadow mask as options; the platform banner
   and core icon.
+* **Super Punch-Out!!** on the same bitstream: its RP5C01 + RP5H01 protection
+  reproduces every one of the 5853 reads the game makes in 30 seconds of MAME,
+  its frozen states render pixel-identical, and it boots and runs frame for
+  frame with MAME through attract mode.
 
 Not yet:
 

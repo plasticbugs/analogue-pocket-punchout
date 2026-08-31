@@ -1005,13 +1005,26 @@ module core_top
     //! Top row is the two jabs, bottom row the KO, shoulders mirror the jabs.
     //! There is no start button on this machine: a coin begins play, so both
     //! Select and Start are wired to the coin slot.
-    wire [7:0] po_in0 = { 4'b0000,
+    //! Super Punch-Out!!'s fourth button lands on IN0 d6 and is ACTIVE LOW --
+    //! the only input on this board that is. Punch-Out!! leaves d6 unconnected
+    //! and, measured over a full fight in MAME, does not care what it reads,
+    //! so wiring it costs that game nothing. Leaving it tied low, as the first
+    //! version did, reads as the button permanently held and Super Punch-Out!!
+    //! plays differently from the arcade.
+    wire       po_btn4 = (po_btn4_sel == 2'd0) ? m_start1 :   // Start, the default
+                         (po_btn4_sel == 2'd1) ? m_btn5   :   // L
+                         (po_btn4_sel == 2'd2) ? m_btn6   :   // R
+                                                 1'b0;        // off
+    wire [7:0] po_in0 = { 1'b0,
+                          ~po_btn4,            // d6: 4th button, active low
+                          2'b00,
                           m_btn2 | m_btn3,     // B or A  -> KO punch
                           m_btn4 | m_btn6,     // X or R  -> right punch
                           1'b0,
                           m_btn1 | m_btn5 };   // Y or L  -> left punch
 
-    wire [7:0] po_in1 = { m_coin1 | m_start1,  // Select or Start -> coin
+    //! Start doubles as coin unless it has been given to the fourth button.
+    wire [7:0] po_in1 = { m_coin1 | (m_start1 & (po_btn4_sel != 2'd0)),
                           svc_sw,
                           2'b00,
                           m_down, m_up, m_left, m_right };
@@ -1049,6 +1062,7 @@ module core_top
     wire [1:0] po_vid_mode   = mod_sw1[3:2];
     wire [1:0] po_rtest      = mod_sw1[5:4];
     wire [1:0] po_reverb_mode = mod_sw1[7:6];    // Cabinet Reverb: off / light / medium
+    wire [1:0] po_btn4_sel    = mod_sw2[1:0];    // Super Punch-Out!! 4th button: Start / L / R / off
     wire [7:0] po_pad_raw  = { cont1_key[15], cont1_key[14],          // start, select
                                cont1_key[9],  cont1_key[8],           // R1, L1
                                cont1_key[4],  cont1_key[5],           // A, B
