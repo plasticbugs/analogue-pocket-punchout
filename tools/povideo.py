@@ -29,14 +29,35 @@ REGIONS = {
 }
 ROM_SIZE = 0x5AC00
 
+# Arm Wrestling runs on the same board but wires the character generator
+# differently: one background set shared by both monitors (twice the size), and
+# three bitplanes of foreground characters where Punch-Out!! has two of
+# background. Its image is therefore a different length, which is what tells
+# the games apart -- here and in the core.
+REGIONS_AW = {
+    'maincpu':  (0x00000, 0x0C000),
+    'audiocpu': (0x0C000, 0x02000),
+    'gfx1':     (0x0E000, 0x08000),
+    'gfx2':     (0x16000, 0x0C000),
+    'gfx3':     (0x22000, 0x30000),
+    'gfx4':     (0x52000, 0x10000),
+    'proms':    (0x62000, 0x00C00),
+    'vlm':      (0x62C00, 0x04000),
+}
+ROM_SIZE_AW = 0x66C00
+
 
 class Roms:
     def __init__(self, path):
         data = open(path, 'rb').read()
-        if len(data) != ROM_SIZE:
+        if len(data) == ROM_SIZE:
+            self.game, regions = 'punchout', REGIONS
+        elif len(data) == ROM_SIZE_AW:
+            self.game, regions = 'armwrest', REGIONS_AW
+        else:
             raise SystemExit(f'{path}: {len(data)} bytes, expected {ROM_SIZE} '
-                             '(build it with tools/mra_build.py)')
-        for name, (off, size) in REGIONS.items():
+                             f'or {ROM_SIZE_AW} (build it with tools/mra_build.py)')
+        for name, (off, size) in regions.items():
             setattr(self, name, data[off:off + size])
 
 
@@ -67,6 +88,12 @@ class State:
         self.e000 = blocks['VRAM_E000']   # spr1 (opponent) then spr2 (player)
         self.f000 = blocks['VRAM_F000']   # bg_bot + per-row scroll
 
+        # Arm Wrestling puts a foreground tilemap where Punch-Out!! keeps the
+        # top background, and splits f000-ffff into two 32x32 maps instead of
+        # one 64x32. The control block at dff0 is in the same place.
+        self.fg      = self.d800                # armwrest only
+        self.bg_top_aw = self.f000[0x800:0x1000]
+        self.bg_bot_aw = self.f000[0x000:0x800]
         self.bg_top = self.d800                 # 0x800, tilemap reads 2 bytes/tile
         self.spr1_ctrl = self.d800[0x7f0:0x7f8]
         self.spr2_ctrl = self.d800[0x7f8:0x7fd]
@@ -102,11 +129,12 @@ def _tile_rows(gfx, stride, planes, code, flipx):
 
 
 def _build_map(vram, gfx, stride, planes, cols, rows, decode, colour_base,
-               transparent_pen=None):
+               transparent_pen=None, scan=None):
     """Render a tilemap to a pixmap of palette indices, plus an opacity mask.
 
     decode(index) -> (code, colour, flipx). colour_base is the GFXDECODE colour
-    base, which is baked into the pixmap exactly as MAME bakes it.
+    base, which is baked into the pixmap exactly as MAME bakes it. scan(col,
+    row) -> memory index is the tilemap mapper; the default is TILEMAP_SCAN_ROWS.
     """
     w, h = cols * 8, rows * 8
     # 'H' not bytearray: gfx2 and gfx4 carry a 0x100 colour base, so pixmap
@@ -118,7 +146,7 @@ def _build_map(vram, gfx, stride, planes, cols, rows, decode, colour_base,
     cache = {}
     for row in range(rows):
         for col in range(cols):
-            code, colour, flipx = decode(row * cols + col)
+            code, colour, flipx = decode(scan(col, row) if scan else row * cols + col)
             key = (code, flipx)
             tile = cache.get(key)
             if tile is None:
@@ -174,6 +202,67 @@ def build_pixmaps(st, roms):
     # gfx3 colour base 0x000; draw_big_sprite adds 0x100 for the bottom monitor.
     maps['spr1'] = _build_map(st.spr1_vram, roms.gfx3, 0x10000, 3, 16, 32, bs1_info,
                               0x000, transparent_pen=0x07)
+    maps['spr2'] = _build_map(st.spr2_vram, roms.gfx4, 0x8000, 2, 16, 32, bs2_info,
+                              0x100, transparent_pen=0x03)
+    return maps
+
+
+def build_pixmaps_armwrest(st, roms):
+    """The five tilemaps armwrest_state::video_start creates.
+
+    One 2bpp character set serves both monitors: the bottom map adds 0x40 to
+    its colour, which lands it in the bottom monitor's half of the palette.
+    """
+
+    def top_info(i):
+        attr = st.bg_top_aw[i * 2 + 1]
+        return (st.bg_top_aw[i * 2] + ((attr & 0x03) << 8) + ((attr & 0x80) << 3),
+                (attr & 0x7c) >> 2,
+                False)
+
+    def bot_info(i):
+        attr = st.bg_bot_aw[i * 2 + 1]
+        return (st.bg_bot_aw[i * 2] + ((attr & 0x03) << 8),
+                ((attr & 0x7c) >> 2) + 0x40,
+                bool(attr & 0x80))
+
+    def fg_info(i):
+        attr = st.fg[i * 2 + 1]
+        return (st.fg[i * 2] + 256 * (attr & 0x07),
+                (attr & 0xf8) >> 3,
+                bool(attr & 0x80))
+
+    def bs1_info(i):
+        attr = st.spr1_vram[i * 4 + 3]
+        return (st.spr1_vram[i * 4] + ((st.spr1_vram[i * 4 + 1] & 0x1f) << 8),
+                attr & 0x1f,
+                bool(attr & 0x80))
+
+    def bs2_info(i):
+        attr = st.spr2_vram[i * 4 + 3]
+        return (st.spr2_vram[i * 4] + ((st.spr2_vram[i * 4 + 1] & 0x0f) << 8),
+                attr & 0x3f,
+                bool(attr & 0x80))
+
+    # armwrest_state::bs1_scan -- the 32-column map is stored as two 16-column
+    # halves one after the other, and the flipped copy swaps which half a
+    # column comes from.
+    def bs1_scan(col, row, flip=False):
+        if flip:
+            col ^= 0x10
+        halfcols = 32 // 2
+        return (col // halfcols) * (halfcols * 16) + row * halfcols + col % halfcols
+
+    maps = {}
+    maps['top'] = _build_map(st.bg_top_aw, roms.gfx1, 0x4000, 2, 32, 32, top_info, 0x000)
+    maps['bot'] = _build_map(st.bg_bot_aw, roms.gfx1, 0x4000, 2, 32, 32, bot_info, 0x000)
+    maps['fg']  = _build_map(st.fg, roms.gfx2, 0x4000, 3, 32, 32, fg_info, 0x100,
+                             transparent_pen=0x07)
+    maps['spr1'] = _build_map(st.spr1_vram, roms.gfx3, 0x10000, 3, 32, 16, bs1_info,
+                              0x000, transparent_pen=0x07, scan=bs1_scan)
+    maps['spr1f'] = _build_map(st.spr1_vram, roms.gfx3, 0x10000, 3, 32, 16, bs1_info,
+                               0x000, transparent_pen=0x07,
+                               scan=lambda c, r: bs1_scan(c, r, True))
     maps['spr2'] = _build_map(st.spr2_vram, roms.gfx4, 0x8000, 2, 16, 32, bs2_info,
                               0x100, transparent_pen=0x03)
     return maps
@@ -360,12 +449,90 @@ def _to_rgb(dest, pal, pal_base):
     return out
 
 
+def draw_big_sprite_armwrest(dest, maps, st, palette):
+    """armwrest_state::draw_big_sprite -- the same zooming blit, but over a
+    32x16 tilemap, and the x flip picks a separately-scanned copy."""
+    c = st.spr1_ctrl
+    zoom = c[0] + 256 * (c[1] & 0x0f)
+    if zoom == 0:
+        return
+
+    sx = 4096 - (c[2] + 256 * (c[3] & 0x0f))
+    if sx > 2048:
+        sx -= 4096
+    sy = -(c[4] + 256 * (c[5] & 1))
+    if sy <= -256 + zoom // 0x40:
+        sy += 512
+    sy += 12
+
+    incxx = incyy = zoom << 6
+    startx = (-sx * 0x4000 + 3740 * zoom) & M32
+    starty = (-sy * 0x10000 - 178 * zoom) & M32
+
+    which = 'spr1'
+    if c[6] & 1:                       # flip x
+        which = 'spr1f'
+        startx = ((32 * 8) << 16) - startx - 1
+        incxx = -incxx
+
+    pix, opq = maps[which]
+    draw_roz(dest, pix, opq, startx & M32, (starty + 0x400 * zoom) & M32,
+             incxx, incyy, 0x100 * palette)
+
+
+def render_top_armwrest(st, roms, maps, raw=False):
+    """armwrest_state::screen_update_top."""
+    dest = _blank_bitmap()
+    pix, _ = maps['top']
+    for y in range(CLIP[1], CLIP[3] + 1):
+        srow = pix[y]
+        drow = dest[y]
+        for x in range(256):
+            drow[x] = srow[x]
+    if st.spr1_ctrl[7] & 1:
+        draw_big_sprite_armwrest(dest, maps, st, 0)
+    if raw:
+        return [[dest[y][x] & 0xff for x in range(256)]
+                for y in range(CLIP[1], CLIP[3] + 1)]
+    return _to_rgb(dest, palette_rgb(roms, 'top', (st.palettebank >> 1) & 1), 0x000)
+
+
+def render_bottom_armwrest(st, roms, maps, raw=False):
+    """armwrest_state::screen_update_bottom -- background, the two big
+    sprites, then the foreground tilemap over everything."""
+    dest = _blank_bitmap()
+    pix, _ = maps['bot']
+    for y in range(CLIP[1], CLIP[3] + 1):
+        srow = pix[y]
+        drow = dest[y]
+        for x in range(256):
+            drow[x] = srow[x]
+    if st.spr1_ctrl[7] & 2:
+        draw_big_sprite_armwrest(dest, maps, st, 1)
+    draw_bs2(dest, maps, st)
+    fpix, fopq = maps['fg']
+    for y in range(CLIP[1], CLIP[3] + 1):
+        srow, orow, drow = fpix[y], fopq[y], dest[y]
+        for x in range(256):
+            if orow[x]:
+                drow[x] = srow[x]
+    if raw:
+        return [[dest[y][x] & 0xff for x in range(256)]
+                for y in range(CLIP[1], CLIP[3] + 1)]
+    return _to_rgb(dest, palette_rgb(roms, 'bot', st.palettebank & 1), 0x100)
+
+
 def render(st, roms):
     """Both monitors stacked the way MAME's dual-screen snapshot stacks them:
     top 0..223, two blank rows, bottom 226..449."""
-    maps = build_pixmaps(st, roms)
-    top = render_top(st, roms, maps)
-    bot = render_bottom(st, roms, maps)
+    if getattr(roms, 'game', 'punchout') == 'armwrest':
+        maps = build_pixmaps_armwrest(st, roms)
+        top = render_top_armwrest(st, roms, maps)
+        bot = render_bottom_armwrest(st, roms, maps)
+    else:
+        maps = build_pixmaps(st, roms)
+        top = render_top(st, roms, maps)
+        bot = render_bottom(st, roms, maps)
     img = bytearray(256 * 450 * 3)
     img[0:256 * 224 * 3] = top
     img[256 * 226 * 3:256 * 450 * 3] = bot

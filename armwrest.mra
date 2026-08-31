@@ -1,0 +1,100 @@
+<misterromdescription>
+    <name>Arm Wrestling</name>
+    <setname>armwrest</setname>
+    <year>1985</year>
+    <manufacturer>Nintendo</manufacturer>
+    <category>Arcade</category>
+    <rbf>punchout</rbf>
+
+    <!-- Nintendo's third game on the Punch-Out!! board. Same CPUs, same two
+         monitors, same big-sprite hardware, but the character generator is
+         wired differently and there is a third tilemap, so this image has its
+         own layout: gfx1 is twice the size and shared by both monitors, gfx2
+         is three bitplanes of foreground characters rather than two of
+         background, and gfx4's ROMs are stored inverted.
+
+           0x00000   49152  Z80 program            (maps to 0000-BFFF)
+           0x0C000    8192  RP2A03 program         (maps to E000-FFFF)
+           0x0E000   32768  gfx1, bg chars         2bpp planar, both monitors
+           0x16000   49152  gfx2, fg chars         3bpp planar, bottom monitor
+           0x22000  196608  gfx3, big sprite #1    3bpp planar, gaps read FF
+           0x52000   65536  gfx4, big sprite #2    2bpp planar, INVERTED
+           0x62000    3072  colour PROMs: R,G,B top then R,G,B bottom
+           0x62C00   16384  VLM5030 speech data
+           0x66C00         total
+
+         The image is a different size from Punch-Out!!'s 371,712 bytes, which
+         is how the core tells the games apart; see docs/hardware.md.
+
+         The 4V socket of big sprite #1 was never fitted and its two other
+         gaps are unpopulated 16 KB sockets; all read FF, as does the space
+         above each of gfx2's and gfx4's parts.
+    -->
+    <rom index="0" zip="armwrest.zip" md5="038b48b3081162670626ba5fae46f697">
+
+        <!-- ============ maincpu: Z80 program, 48 KB ============ -->
+        <part name="chv1-c.8l" crc="b09764c1"/>
+        <part name="chv1-c.8k" crc="0e147ff7"/>
+        <part name="chv1-c.8j" crc="e7365289"/>
+        <part name="chv1-c.8h" crc="a2118eec"/>
+        <part name="chpv-c.8f" crc="664a07c4"/>
+
+        <!-- ============ audiocpu: RP2A03 program, 8 KB ============ -->
+        <part name="chp1-c.4k" crc="cb6ef376"/>
+
+        <!-- ============ gfx1: background chars, both monitors ============ -->
+        <!-- plane 0 (pixel bit 0) -->
+        <part name="chpv-b.2e" crc="8b45f365"/>
+        <!-- plane 1 (pixel bit 1) -->
+        <part name="chpv-b.2d" crc="b1a2850c"/>
+
+        <!-- ============ gfx2: foreground chars, bottom monitor ============ -->
+        <!-- plane 0 (pixel bit 0) -->
+        <part name="chpv-b.2m" crc="19245b37"/>
+        <!-- plane 1 (pixel bit 1) -->
+        <part name="chpv-b.2l" crc="46797941"/>
+        <!-- plane 2 (pixel bit 2); only the upper half of the socket is fitted -->
+        <part repeat="0x2000">FF</part>
+        <part name="chpv-b.2k" crc="de189b00"/>
+
+        <!-- ============ gfx3: big sprite #1, three 64 KB planes ============ -->
+        <!-- plane 0 (pixel bit 0) -->
+        <part name="chv1-v.2r" crc="d86056d9"/>
+        <part name="chv1-v.2t" crc="5ad77059"/>
+        <part repeat="0x4000">FF</part>
+        <part name="chv1-v.2v" crc="a0fd7338"/>
+        <!-- plane 1 (pixel bit 1) -->
+        <part name="chv1-v.3r" crc="690e26fb"/>
+        <part name="chv1-v.3t" crc="ea5d7759"/>
+        <part repeat="0x4000">FF</part>
+        <part name="chv1-v.3v" crc="ceb37c05"/>
+        <!-- plane 2 (pixel bit 2); socket 4v was never fitted -->
+        <part name="chv1-v.4r" crc="e291cba0"/>
+        <part name="chv1-v.4t" crc="e01f3b59"/>
+        <part repeat="0x8000">FF</part>
+
+        <!-- ============ gfx4: big sprite #2, two 32 KB planes ============ -->
+        <!-- The board stores these inverted; MAME marks the region
+             ROMREGION_INVERT and the builder flips them here. -->
+        <!-- plane 0 (pixel bit 0) -->
+        <part name="chv1-v.6p" crc="d834e142" invert="1"/>
+        <part repeat="0x6000">FF</part>
+        <!-- plane 1 (pixel bit 1) -->
+        <part name="chv1-v.8p" crc="a2f531db" invert="1"/>
+        <part repeat="0x6000">FF</part>
+
+        <!-- ============ colour PROMs ============ -->
+        <part name="chpv-b.7b" crc="df6fdeb3"/>   <!-- top    R -->
+        <part name="chpv-b.7c" crc="b1da5f42"/>   <!-- top    G -->
+        <part name="chpv-b.7d" crc="4ede813e"/>   <!-- top    B -->
+        <part name="chpv-b.4b" crc="9d51416e"/>   <!-- bottom R -->
+        <part name="chpv-b.4c" crc="b8a25795"/>   <!-- bottom G -->
+        <part name="chpv-b.4d" crc="474fc3b1"/>   <!-- bottom B -->
+
+        <!-- ============ VLM5030 speech data ============ -->
+        <part name="chv1-c.6p" crc="31b52896"/>
+    </rom>
+
+    <!-- Factory DIP defaults: DSW1 = 0x00, DSW2 = 0x10 -->
+    <buttons names="Left,Right,Special,Coin" default="Y,X,B,Select" count="3"/>
+</misterromdescription>

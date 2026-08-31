@@ -100,3 +100,12 @@ _tmp
 __pycache__/
 *.pyc
 /artifacts_sys/
+
+# Romsets and MAME's own working files. The project never ships or commits a
+# romset; these entries are the second line of defence after the packager's
+# check. Loose-file sets have no telltale extension, so ignore the directories.
+/spnchout/
+/armwrest/
+/cfg/
+/nvram/
+/mamecfg/

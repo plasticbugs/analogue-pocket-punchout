@@ -39,30 +39,22 @@
         ]
       },
       {
-        "name": "SPO 4th Button",
+        "name": "SPO Duck Button",
         "id": 51,
         "type": "list",
         "enabled": true,
         "persist": true,
         "address": "0xF2000000",
         "defaultval": 0,
-        "mask": "0xFFFCFFFF",
+        "mask": "0xFFFEFFFF",
         "options": [
           {
-            "name": "Start",
+            "name": "A (KO on B)",
             "value": "0x00000000"
           },
           {
-            "name": "L",
+            "name": "B (KO on A)",
             "value": "0x00010000"
-          },
-          {
-            "name": "R",
-            "value": "0x00020000"
-          },
-          {
-            "name": "Off",
-            "value": "0x00030000"
           }
         ]
       },

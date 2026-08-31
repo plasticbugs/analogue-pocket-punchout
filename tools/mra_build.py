@@ -16,6 +16,7 @@ the standard MRA format already covers and both of which are implemented here:
         appears four times.
 
   <part repeat="0x2000">FF</part>
+  <part name="x.rom" crc="12345678" invert="1"/>   ROMREGION_INVERT
         a run of literal bytes. The big-sprite ROM boards have unpopulated
         sockets that read as 0xFF, and keeping those gaps in the image is what
         lets a tile code address the data with a shift and an add.
@@ -102,6 +103,13 @@ def get_part(parts, node):
         if len(sliced) != n:
             sys.exit(f'error: {name} is {len(data)} bytes, too short for '
                      f'offset 0x{off:x} length 0x{n:x}')
+
+    # invert="1" is our own attribute, for a region MAME marks
+    # ROMREGION_INVERT: Arm Wrestling's big-sprite #2 ROMs are stored with
+    # every bit flipped. Doing it here keeps one graphics path in the core for
+    # all three games.
+    if node.get('invert') in ('1', 'true', 'yes'):
+        sliced = bytes(b ^ 0xff for b in sliced)
     return name, sliced
 
 
