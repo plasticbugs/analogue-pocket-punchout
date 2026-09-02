@@ -34,7 +34,8 @@ with open(os.path.join(core_dir, "bitstream.rbf_r"), "wb") as f:
 
 # Ship the ROM recipe and its builder alongside the core, so a downloaded
 # release contains everything needed to produce punchout.rom.
-for extra in ("punchout.mra", "spnchout.mra", "README.md", os.path.join("tools", "mra_build.py")):
+for extra in ("punchout.mra", "spnchout.mra", "armwrest.mra", "README.md",
+              os.path.join("tools", "mra_build.py")):
     src = os.path.join(ROOT, extra)
     if os.path.exists(src):
         shutil.copy(src, os.path.join(OUT, os.path.basename(extra)))
@@ -49,3 +50,4 @@ print(f"packaged -> {OUT}")
 print("copy Cores/, Platforms/ and Assets/ from that folder onto the SD card root")
 print("build a ROM with:    python3 mra_build.py punchout.mra punchout.zip")
 print("                     python3 mra_build.py spnchout.mra spnchout.zip")
+print("                     python3 mra_build.py armwrest.mra armwrest.zip")

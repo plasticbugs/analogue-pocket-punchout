@@ -1,12 +1,12 @@
-Punch-Out!! / Super Punch-Out!!
-(Nintendo, 1984)
+Punch-Out!! / Super Punch-Out!! /
+Arm Wrestling (Nintendo, 1984-85)
 
-Both two-monitor boxing cabinets on
-one Pocket display: the info screen
-at native size across the top third,
-the fight below it at 2x. Neither
-loses a pixel. One core plays both;
-pick the image in ROM Set.
+All three games on Nintendo's two-
+monitor board, on one Pocket display:
+info screen at native size across the
+top third, the action below it at 2x.
+Neither loses a pixel. One core plays
+all three; pick the image in ROM Set.
 
 Hardware
 * Z80 4 MHz, main board
@@ -15,20 +15,20 @@ Hardware
 * Two 256x224 monitors
 * Zooming "big sprite" tilemaps
 * RP5C01 + RP5H01 protection
+* A third tilemap for Arm Wrestling
 
 Controls
   D-pad   dodge / duck / block
   Y or L  left punch
   X or R  right punch
-  B or A  KO punch
-  Start   4th button, Super only
+  B       KO punch
+  A       duck, Super Punch-Out!!
   Select  coin; a coin starts play
+Arm Wrestling: any button works.
 
 ROMs are not included. Build from
-your own MAME romset:
-
-  python3 mra_build.py punchout.mra
-      punchout.zip
-
-and copy into Assets/punchout/common.
-Records are saved to the SD card.
+your own MAME romsets with the
+included mra_build.py. Records are
+saved to the SD card. The DIP menu is
+labelled for Punch-Out!!; Arm
+Wrestling's switches differ.

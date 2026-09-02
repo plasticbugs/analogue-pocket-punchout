@@ -6,11 +6,11 @@
                 "punchout"
             ],
             "shortname": "punchout",
-            "description": "Punch-Out!! and Super Punch-Out!! (Nintendo, 1984)",
+            "description": "Punch-Out!!, Super Punch-Out!! and Arm Wrestling",
             "author": "plasticbugs",
             "url": "https://github.com/plasticbugs/analogue-pocket-punchout",
-            "version": "0.2.0",
-            "date_release": "2026-08-30"
+            "version": "0.3.0",
+            "date_release": "2026-09-02"
         },
         "framework": {
             "target_product": "Analogue Pocket",

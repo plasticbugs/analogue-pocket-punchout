@@ -13,6 +13,12 @@ OUT=${OUT:-artifacts}
 ROMSET=${ROMSET:-mame-romset}
 # GAME picks the MAME set: punchout, or spnchout for Super Punch-Out!!
 GAME=${GAME:-punchout}
+# Every MAME run starts from a blank battery RAM and no saved config,
+# which is how the core starts. A carried-over nvram changes what
+# attract mode draws -- it is why Arm Wrestling's first boot comparison
+# differed by 94,606 pixels -- and made the references irreproducible.
+COLD=$(mktemp -d)
+trap 'rm -rf "$COLD" ${SCRATCH:-}' EXIT
 
 # Frames picked from a 9000-frame scan of the big-sprite control registers
 # rather than by eye, so the set actually covers what the hardware can do:
@@ -34,7 +40,6 @@ if [ -d "$ROMSET" ]; then
     SCRATCH=$(mktemp -d)
     (cd "$ROMSET" && zip -q -X "$SCRATCH/$GAME.zip" ./*.*)
     ROMPATH="$SCRATCH"
-    trap 'rm -rf "$SCRATCH"' EXIT
 else
     ROMPATH=$(dirname "$ROMSET")
 fi
@@ -47,12 +52,13 @@ rm -rf "$OUT"; mkdir -p "$OUT" build/mamecfg
 SYNTH=${SYNTH:-"900:1 900:3"}
 
 for f in $FRAMES; do
+    rm -rf "$COLD"; mkdir -p "$COLD"
     tag=$(printf "%04d" "$f")
     PO_OUT="$OUT" PO_FRAME="$f" PO_TAG="$tag" \
     mame "$GAME" -rompath "$ROMPATH" -video none -sound none -nothrottle \
         -skip_gameinfo -seconds_to_run 3600 \
-        -snapshot_directory "$OUT/snap_$tag" -cfg_directory build/mamecfg \
-        -nvram_directory build/mamecfg -autoboot_script tools/dumpstate.lua \
+        -snapshot_directory "$OUT/snap_$tag" -cfg_directory "$COLD" \
+        -nvram_directory "$COLD" -autoboot_script tools/dumpstate.lua \
         2>&1 | grep -E '^\[po\]' || true
     snap=$(ls "$OUT/snap_$tag"/"$GAME"/*.png 2>/dev/null | head -1)
     [ -n "$snap" ] || { echo "no snapshot for frame $f"; exit 1; }
@@ -62,13 +68,14 @@ for f in $FRAMES; do
 done
 
 for spec in $SYNTH; do
+    rm -rf "$COLD"; mkdir -p "$COLD"
     f=${spec%%:*}; bank=${spec##*:}
     tag=$(printf "%04dp%s" "$f" "$bank")
     PO_OUT="$OUT" PO_FRAME="$f" PO_TAG="$tag" PO_PALBANK="$bank" \
     mame "$GAME" -rompath "$ROMPATH" -video none -sound none -nothrottle \
         -skip_gameinfo -seconds_to_run 3600 \
-        -snapshot_directory "$OUT/snap_$tag" -cfg_directory build/mamecfg \
-        -nvram_directory build/mamecfg -autoboot_script tools/dumpstate.lua \
+        -snapshot_directory "$OUT/snap_$tag" -cfg_directory "$COLD" \
+        -nvram_directory "$COLD" -autoboot_script tools/dumpstate.lua \
         2>&1 | grep -E '^\[po\]' || true
     snap=$(ls "$OUT/snap_$tag"/"$GAME"/*.png 2>/dev/null | head -1)
     [ -n "$snap" ] && mv "$snap" "$OUT/mame_$tag.png"

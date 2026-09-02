@@ -994,9 +994,16 @@ module punchout_video (
                         px <= {1'b0, sx2[7:0]};
                         cx <= startx2;
                         cy <= s2y[23:16];
+                        // Skipping big sprite #2 must not skip the
+                        // foreground with it: Arm Wrestling's third tilemap is
+                        // drawn on every line of the bottom monitor, not only
+                        // the lines this sprite happens to cover. Chaining the
+                        // foreground off the end of the sprite loop left the
+                        // attract screen's text unrendered wherever the sprite
+                        // did not reach.
                         if (rtest[1] || rend_top || !spr2_on || (sx2 > 9'd255)
                             || (s2y >= HEIGHTSHIFTED))
-                            rs <= R_DONE;
+                            rs <= (armwrest && !rend_top) ? R_FG_INIT : R_DONE;
                         else
                             rs <= R_S2_TILE;
                     end

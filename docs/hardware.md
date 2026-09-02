@@ -602,3 +602,40 @@ nibbles of scratch RAM that BLOCK10/BLOCK11 mode reaches. The RP5H01's PROM is
 unprogrammed, a known 16-byte pattern, clocked by a counter the game resets and
 steps through ports 05 and 06.
 
+## Arm Wrestling
+
+Nintendo's third game on this board, and the one that really changes the video
+hardware. The CPUs, the two monitors, the big-sprite zoom and the protection-free
+I/O map are the same; what differs:
+
+* **A third tilemap.** A 32x32 foreground map of three-bitplane characters,
+  drawn over the sprites on the bottom monitor with pen 7 transparent. It sits
+  at d800-dfef, where Punch-Out!! keeps its top background.
+* **The video RAM moves.** f000-f7ff is the bottom map and f800-ffff the top,
+  both 32 columns; Punch-Out!! has one 64-column map across f000-ffff with a
+  row-scroll table in its first 64 bytes. Arm Wrestling has no row scroll.
+* **One character set for both monitors.** 32 KB of 2bpp characters serve the
+  top and bottom maps; the bottom map adds 0x40 to its colour, which lands it
+  in the bottom monitor's half of the palette.
+* **Different tile codes.** The top map takes attr[7] as bit 10 of the code
+  rather than a flip flag; the foreground takes three bits of attr.
+* **Big sprite #1 turns on its side**: a 32x16 map, 256x128 pixels, stored as
+  two 16-column halves one after the other. The x flip selects the other half
+  instead of mirroring within one, and the sprite's x folds at 2048 rather
+  than 4096-4*127.
+* **Big sprite #2's ROMs are stored inverted** (MAME's ROMREGION_INVERT); the
+  image builder flips them so the core's graphics path is the same for all
+  three games.
+* **The panel changes**: one button on IN0 d5, and the stick's UP on IN0 d6,
+  active low. IN0 d0/d2/d3 and IN1 d2/d3 are unconnected.
+* **The DIP switches mean different things.** DSW1[3:0] and DSW2[5:2] are two
+  halves of a coinage table rather than Punch-Out!!'s coinage and demo-sound
+  settings, and DSW2[6] is the rematch count. The core passes the raw bits
+  through, so the menu's Punch-Out!! labels do not describe what they do here.
+
+Its image has its own layout (`armwrest.mra`), 420,864 bytes against the
+371,712 the two Punch-Out!!s share, and that length is the whole of the game
+detection: the APF announces a data slot's size before it sends a byte, so the
+core knows which game it is loading before the first byte arrives. No header,
+no signature, and the existing images keep working untouched.
+

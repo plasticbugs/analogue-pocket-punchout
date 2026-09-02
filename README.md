@@ -1,16 +1,19 @@
 # Punch-Out!! and Super Punch-Out!! for Analogue Pocket
 
-An openFPGA core for **Punch-Out!!** and **Super Punch-Out!!** (Nintendo, 1984),
-reimplementing the arcade hardware: a Z80 main board, an RP2A03 sound board (a
+An openFPGA core for **Punch-Out!!**, **Super Punch-Out!!** (Nintendo, 1984) and
+**Arm Wrestling** (1985), reimplementing the arcade hardware: a Z80 main board, an RP2A03 sound board (a
 6502 with the NES APU on the same die), a VLM5030 speech synthesiser, two
 256×224 monitors, and the two zooming "big sprite" tilemaps that draw the
 boxers.
 
-Both games ran on the same CHP1 board, so one bitstream plays either — pick the
-image from **ROM Set** in the core menu. Super Punch-Out!! adds an RP5C01 clock
-and an RP5H01 one-time PROM as copy protection, which the core implements; the
-chips sit on I/O ports Punch-Out!! never reads, so nothing has to be detected or
-switched.
+All three ran on the same Nintendo board, so one bitstream plays any of them —
+pick the image from **ROM Set** in the core menu. Super Punch-Out!! adds an
+RP5C01 clock and an RP5H01 one-time PROM as copy protection, which the core
+implements; those chips sit on I/O ports the other games never read, so nothing
+has to be detected for them. Arm Wrestling genuinely rewires the video — a third
+tilemap, one character set shared by both monitors, a sideways big sprite — and
+the core switches to it on the image's length, which the Pocket reports before
+the first byte arrives.
 
 The cabinet had **two stacked monitors**. The Pocket has one, so the core
 composites both into a single 512×672 raster: the info screen at native size
@@ -40,13 +43,15 @@ ROM, all the video RAM — is block RAM and single cycle.
    ```sh
    python3 mra_build.py punchout.mra punchout.zip     # Punch-Out!!
    python3 mra_build.py spnchout.mra spnchout.zip     # Super Punch-Out!!
+   python3 mra_build.py armwrest.mra armwrest.zip     # Arm Wrestling
    ```
 
    Nothing but Python 3 is needed. It checks every ROM's CRC32 and verifies the
-   finished 371,712-byte image against a known md5, so a wrong or bad romset is
-   reported rather than silently built. Both images have the same layout and
-   size; put either or both in `Assets/punchout/common/` and choose one from
-   **ROM Set** in the core menu.
+   finished image against a known md5, so a wrong or bad romset is reported
+   rather than silently built. Put any of them in `Assets/punchout/common/` and
+   choose one from **ROM Set** in the core menu. The two Punch-Out!!s share a
+   371,712-byte layout; Arm Wrestling's is 420,864, which is how the core knows
+   which hardware to be.
 
 ## Controls
 
@@ -72,12 +77,12 @@ for both games and defaults to Start.
 | Reset Core | Restart the machine |
 | Reset Records | Wipe the battery RAM (high scores, play counters) |
 | Screen Shape | Arcade (square pixels) or Fill Screen |
-| ROM Set | Which game: pick `punchout.rom` or `spnchout.rom` |
+| ROM Set | Which game: `punchout.rom`, `spnchout.rom` or `armwrest.rom` |
 | SPO 4th Button | Start / L / R / Off — Super Punch-Out!!'s fourth button |
 | Cabinet Reverb | Off / Light / Medium / Heavy — a short, dark room around the whole mix |
 | Scanlines | Off / 25 % / 50 % / 75 % — on the fight screen, drawn at 2×, they fall on one row of each pair |
 | Shadow Mask | Off / On / rotated / 2× |
-| Difficulty, Round Time, Demo Sounds, Rematch At A Discount, Free Play, Copyright Notice, Service Mode | The board's DIP switches |
+| Difficulty, Round Time, Demo Sounds, Rematch At A Discount, Free Play, Copyright Notice, Service Mode | The board's DIP switches. Labelled for Punch-Out!!; Arm Wrestling's switches mean different things (two halves of a coinage table, and a rematch count) |
 
 Records (high scores) are saved by the core itself a couple of seconds after
 they change, to `Saves/punchout/plasticbugs.punchout/punchout.sav`, and loaded
@@ -86,8 +91,8 @@ display settings for this core.
 
 ## What is and is not implemented
 
-Synthesis closes on the real part: 37% of the logic, 38% of the block RAM,
-15 of 66 DSP blocks, and nothing negative in any timing corner at 96 MHz.
+Synthesis closes on the real part: 41% of the logic, 51% of the block RAM,
+14 of 66 DSP blocks, and nothing negative in any timing corner at 96 MHz.
 
 Working and verified:
 
@@ -115,6 +120,15 @@ Working and verified:
   reproduces every one of the 5853 reads the game makes in 30 seconds of MAME,
   its frozen states render pixel-identical, and it boots and runs frame for
   frame with MAME through attract mode.
+* **Arm Wrestling** on the same bitstream: its third tilemap, shared character
+  set and sideways big sprite render pixel-identical to MAME across eight
+  frozen states, and frames 150, 300, 600, 900 and 1500 of attract mode are
+  identical to MAME.
+* **All three games boot into attract mode frame-identical to MAME** from
+  frame 300 onward, on one bitstream. One earlier frame per game still differs
+  -- Punch-Out!! at 150, Arm Wrestling at 60 -- and each of those renders
+  pixel-exactly from its own state, so what differs is the machine's timing in
+  the first seconds, not the video hardware.
 
 Not yet:
 
@@ -127,7 +141,9 @@ Not yet:
 * **A fight frame-locked to MAME.** The pre-bout sequence matches MAME to the
   frame, but from the first exchange the scripted fight plays out about two
   seconds differently — the game's random source, an input-sampling detail or
-  a sound-board handshake; measured, cause not yet found.
+  a sound-board handshake; measured, cause not yet found. Arm Wrestling shows
+  the same kind of gap at frame 60 -- one second after power-on, before the
+  first screen has settled -- and is identical to MAME from frame 150 on.
 
 Hardware status: **plays on the Pocket** (v0.1.2) -- game logic, music,
 speech, both screens, sprites, records. Getting the SDRAM path from garbage to

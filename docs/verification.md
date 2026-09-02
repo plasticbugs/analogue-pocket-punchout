@@ -876,6 +876,106 @@ core left it, the button reads as permanently held and a scripted fight
 diverges from MAME within 200 frames. Tied high (released) it does not. That
 is why the pin is wired rather than tied off.
 
+## Arm Wrestling
+
+* **Reference renderer.** Eight frozen states -- attract, gameplay, both forced
+  palette banks -- render pixel-identical to MAME, which is what established
+  that the image layout, the three tilemaps, the shared character set, the
+  split-column sprite scan and the inverted big-sprite ROMs are all right.
+* **RTL.** The same eight states are pixel-identical through the RTL renderer.
+  Punch-Out!!'s and Super Punch-Out!!'s states still are, on the same
+  bitstream.
+* **Boot.** The machine boots and runs, and frames 150, 300, 600, 900 and 1500
+  of attract mode are **identical to MAME**. Frame 60 still differs by 18,432
+  pixels; its state renders exactly in both the reference renderer and the RTL,
+  so what differs is the machine, one second after power-on and before the
+  first screen has settled. By frame 150 it has converged and it stays
+  converged.
+
+### The foreground that was chained to a sprite
+
+Getting there took one real bug, and finding it is worth recording because
+every cheap check said the core was right.
+
+The symptom was 309 pixels at frames 150 and 300 -- an "INSERT COIN" line on
+the bottom monitor that MAME drew and the core did not. Every input the
+renderer reads was identical to MAME: both background maps, the foreground
+map, both big-sprite RAMs, the eight sprite control bytes at `dff0`, the
+palette bank. Not just the live RAM -- the *shadow* copies the renderer
+actually reads, compared cell by cell. And the reference renderer, given
+MAME's own dumped state, reproduced MAME's frame exactly.
+
+Identical inputs, identical spec, different output. That combination means the
+fault is in the RTL and nowhere else, so the next step was to make it
+reproduce in the fast bench: the state was handed to `sim/run_video.sh`, where
+it failed in seconds instead of minutes. Suppressing one layer at a time in
+the reference renderer named the layer -- the foreground tilemap, and only it,
+drew those 309 pixels.
+
+The cause was a state machine that had grown a tail. Arm Wrestling's
+foreground pass was entered from the *end of the big-sprite-#2 loop*:
+
+```systemverilog
+R_S2_EMIT: ...
+    rs <= (armwrest && !rend_top) ? R_FG_INIT : R_DONE;
+```
+
+which is correct for every line big sprite #2 covers. But `R_S2_START` skips
+the whole sprite loop when the sprite is disabled or off that line, and it
+skipped straight to `R_DONE` -- taking the foreground with it. The foreground
+map was being drawn only on the lines a sprite happened to reach. The fix is
+the same expression on the skip path.
+
+Three lessons, all game-agnostic:
+
+* **A pass that belongs to the screen must not be reached through a pass that
+  belongs to an object.** Every early-out in a renderer state machine has to
+  name its own successor; inheriting one from the branch above is how a layer
+  silently disappears.
+* **Frozen states only prove what they contain.** Eight states passed for as
+  long as all eight had the sprite on the text's lines. A suite is evidence
+  about its samples, not about the hardware, and "pixel-exact on every state"
+  should always be read with "...that we captured" appended.
+* **Comparing RAM is not comparing what the renderer reads.** The live memory
+  matched MAME throughout; the bug lived downstream of it. Where a design
+  snapshots or shadows state, the shadow is the thing to check -- and here it
+  was checked, matched, and correctly cleared the whole memory path, which is
+  what left the state machine as the only remaining suspect.
+
+### Where all three games stand at boot
+
+Re-measured on one bitstream after the fix, every reference re-captured from a
+cold machine:
+
+| frame | Punch-Out!! | Super Punch-Out!! | Arm Wrestling |
+|-------|-------------|-------------------|---------------|
+| 60    | identical   | identical         | 18,432 px     |
+| 150   | 14,444 px   | identical         | identical     |
+| 300   | identical   | identical         | identical     |
+| 600   | identical   | identical         | identical     |
+| 900   | identical   | identical         | identical     |
+| 1500  | identical   | identical         | identical     |
+
+Each of the two differing frames was then handed to the reference renderer and
+to the frozen-state RTL bench on its own: **both render it pixel-exactly**. So
+what is left in each case is not video hardware but the machine's timing in the
+first seconds after power-on, before the opening screen has settled -- and both
+games converge and stay converged for the rest of attract mode. This is the
+same open question as the fight-timeline divergence below, measured at a
+different moment.
+
+Two things the comparison needed before it meant anything:
+
+* **A cold machine.** `tools/capture_attract.sh` and `capture_states.sh` now
+  give every MAME run an empty nvram and config directory. A carried-over
+  battery RAM changes what attract mode draws -- with one, Arm Wrestling's
+  first boot comparison was out by 94,606 pixels and the references were not
+  reproducible.
+* **The right DIP defaults.** Punch-Out!!'s DSW2 bit 4 is Demo Sounds and
+  defaults on; on Arm Wrestling that bit is part of Coinage 2, whose default
+  is zero, so the bench was asking for a different coin rate and the screen
+  printed a different number.
+
 ## Not yet checked
 * **RTL sprite-engine line budget** (METHODOLOGY §5.2) — the bench must report
   worst-case cycles per line, not just pixel equality.

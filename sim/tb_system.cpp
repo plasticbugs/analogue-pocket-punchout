@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <map>
 
 static Vtb_system_top *dut;
 static vluint64_t main_time = 0;
@@ -142,7 +143,11 @@ int main(int argc, char **argv) {
     dut->in0 = 0; dut->in1 = 0;
     dut->nv_addr = 0; dut->nv_we = 0; dut->nv_d = 0; dut->nv_clear = 0;
     dut->armwrest = 0;      // set from the image size once it is loaded
-    dut->dsw1 = 0x00; dut->dsw2 = 0x10;      // factory defaults
+    // Factory defaults. Punch-Out!!'s DSW2 bit 4 is Demo Sounds, on by
+    // default; on Arm Wrestling that bit belongs to Coinage 2, whose default
+    // is zero, so leaving it set asks for a different coin rate and the
+    // attract screen prints a different number.
+    dut->dsw1 = 0x00; dut->dsw2 = 0x10;
     for (int i = 0; i < 64; i++) tick();
     dut->hw_reset = 0;                        // PLL locked; reset stays asserted
 
@@ -155,6 +160,7 @@ int main(int argc, char **argv) {
     dut->armwrest = (rom.size() == 0x66C00);
     const unsigned IMG_GFX3 = dut->armwrest ? 0x22000 : 0x16000;
     const unsigned IMG_GFX4 = dut->armwrest ? 0x52000 : 0x46000;
+    if (dut->armwrest) dut->dsw2 = 0x00;
     printf("image %zu bytes -> %s\n", rom.size(), dut->armwrest ? "Arm Wrestling" : "Punch-Out!!");
     for (size_t a = 0; a < rom.size(); a++) {
         dut->dl_addr = (unsigned)a;
@@ -341,6 +347,28 @@ int main(int argc, char **argv) {
                             if (img[o] != ref[r] || img[o + 1] != ref[r + 1] ||
                                 img[o + 2] != ref[r + 2]) diff++;
                         }
+                    // PO_CELLS=1 says where they are: which 8x8 tile cell of
+                    // which monitor, so a pixel count becomes a list of cells
+                    // to look up in video RAM.
+                    if (diff && getenv("PO_CELLS")) {
+                        std::map<int, int> cells;
+                        for (int y = 0; y < SH; y++)
+                            for (int x = 0; x < SW; x++) {
+                                int o = top ? ((y * CW + TOP_XOFF + x) * 3)
+                                            : (((TOP_ROWS + 2 * y) * CW + 2 * x) * 3);
+                                int r = (y * SW + x) * 3;
+                                if (img[o] != ref[r] || img[o + 1] != ref[r + 1] ||
+                                    img[o + 2] != ref[r + 2])
+                                    cells[(y / 8) * 32 + (x / 8)]++;
+                            }
+                        printf("    %s: %zu cells differ:", name, cells.size());
+                        int shown = 0;
+                        for (auto &c : cells) {
+                            if (shown++ == 12) { printf(" ..."); break; }
+                            printf(" (r%d,c%d)x%d", c.first / 32, c.first % 32, c.second);
+                        }
+                        printf("\n");
+                    }
                     (void)name;
                     return diff;
                 };
@@ -355,16 +383,19 @@ int main(int argc, char **argv) {
                     snprintf(sp, sizeof sp, "%s/state_%04d.txt", ref_dir, f);
                     FILE *sf = fopen(sp, "r");
                     if (sf) {
-                        char line[512]; std::string cur; std::vector<unsigned char> e000;
+                        char line[512]; std::string cur;
+                        std::map<std::string, std::vector<unsigned char>> vr;
                         while (fgets(line, sizeof line, sf)) {
                             std::string L(line);
                             while (!L.empty() && (L.back()=='\n'||L.back()=='\r')) L.pop_back();
                             if (L.rfind("VRAM_",0)==0) { cur=L; continue; }
-                            if (cur!="VRAM_E000" || L=="END" || L.empty()) continue;
+                            if (cur.empty() || L=="END" || L.empty()) continue;
+                            auto &v = vr[cur];
                             for (size_t i=0;i+1<L.size();i+=2)
-                                e000.push_back((unsigned char)strtol(L.substr(i,2).c_str(),nullptr,16));
+                                v.push_back((unsigned char)strtol(L.substr(i,2).c_str(),nullptr,16));
                         }
                         fclose(sf);
+                        std::vector<unsigned char> &e000 = vr["VRAM_E000"];
                         auto &r = *dut->rootp;
                         long bad = 0; int firstbad = -1;
                         for (int t = 0; t < 512 && (int)e000.size() >= 2048; t++)
@@ -380,6 +411,132 @@ int main(int argc, char **argv) {
                         printf("  spr1 video RAM: %ld of 2048 bytes differ from MAME%s\n",
                                bad, bad ? "" : " (identical)");
                         if (bad) printf("    first at e%03x\n", 0x000 + firstbad);
+
+                        // Big sprite #2 lives in the upper half of the same
+                        // dump, at e800. It draws over the bottom monitor.
+                        long bad2 = 0; int firstbad2 = -1;
+                        auto &r3 = *dut->rootp;
+                        for (int t = 0; t < 512 && (int)e000.size() >= 4096; t++)
+                            for (int lane = 0; lane < 4; lane++) {
+                                unsigned got =
+                                  lane==0 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__0__KET____DOT__u_s2__DOT__mem[t] :
+                                  lane==1 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__1__KET____DOT__u_s2__DOT__mem[t] :
+                                  lane==2 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__2__KET____DOT__u_s2__DOT__mem[t] :
+                                            r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__3__KET____DOT__u_s2__DOT__mem[t];
+                                unsigned want = e000[2048 + t*4 + lane];
+                                if (got != want) {
+                                    if (firstbad2 < 0) firstbad2 = t*4 + lane;
+                                    if (bad2 < 6)
+                                        printf("    e%03x cell %3d lane %d: rtl %02x, mame %02x\n",
+                                               0x800 + t*4 + lane, t, lane, got, want);
+                                    bad2++;
+                                }
+                            }
+                        if ((int)e000.size() >= 4096)
+                            printf("  spr2 video RAM: %ld of 2048 bytes differ from MAME%s\n",
+                                   bad2, bad2 ? "" : " (identical)");
+
+                        // The renderer does not read the live RAM: it reads the
+                        // shadow the copier fills at the back porch. Compare
+                        // that instead, since a stale shadow and correct live
+                        // RAM look exactly like a renderer fault on screen.
+                        auto cmp_shadow = [&](const char *label, std::vector<unsigned char> &src,
+                                              size_t off, size_t len, unsigned base,
+                                              auto &m0, auto &m1) {
+                            if (src.size() < off + len) return;
+                            long b = 0; int fb = -1;
+                            for (size_t i = 0; i < len; i++) {
+                                unsigned got = (i & 1) ? m1[i / 2] : m0[i / 2];
+                                if (got != src[off + i]) {
+                                    if (fb < 0) fb = (int)i;
+                                    if (b < 6)
+                                        printf("    %04x cell %3u %s: shadow %02x, mame %02x\n",
+                                               (unsigned)(base + i), (unsigned)(i / 2),
+                                               (i & 1) ? "attr" : "code", got, src[off + i]);
+                                    b++;
+                                }
+                            }
+                            printf("  SHADOW %s: %ld of %zu bytes differ from MAME%s\n",
+                                   label, b, len, b ? "" : " (identical)");
+                        };
+                        if (dut->armwrest) {
+                            cmp_shadow("fg  (d800)", vr["VRAM_D800"], 0, 0x800, 0xd800,
+                                r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_sfg0__DOT__mem,
+                                r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_sfg1__DOT__mem);
+                            cmp_shadow("bot (f000)", vr["VRAM_F000"], 0, 0x800, 0xf000,
+                                r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_sbgb0__DOT__mem,
+                                r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_sbgb1__DOT__mem);
+                            cmp_shadow("top (f800)", vr["VRAM_F000"], 0x800, 0x800, 0xf800,
+                                r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_sbgt0__DOT__mem,
+                                r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_sbgt1__DOT__mem);
+                        }
+                        // the sprite shadows, four bytes to a cell
+                        for (int which = 0; which < 2; which++) {
+                            long b = 0; int fb = -1;
+                            if ((int)e000.size() < 4096) break;
+                            for (int t = 0; t < 512; t++)
+                                for (int lane = 0; lane < 4; lane++) {
+                                    unsigned got = which == 0 ?
+                                      (lane==0 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__0__KET____DOT__u_ss1__DOT__mem[t] :
+                                       lane==1 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__1__KET____DOT__u_ss1__DOT__mem[t] :
+                                       lane==2 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__2__KET____DOT__u_ss1__DOT__mem[t] :
+                                                 r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__3__KET____DOT__u_ss1__DOT__mem[t]) :
+                                      (lane==0 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__0__KET____DOT__u_ss2__DOT__mem[t] :
+                                       lane==1 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__1__KET____DOT__u_ss2__DOT__mem[t] :
+                                       lane==2 ? r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__2__KET____DOT__u_ss2__DOT__mem[t] :
+                                                 r3.tb_system_top__DOT__u_core__DOT__u_video__DOT__g_spr__BRA__3__KET____DOT__u_ss2__DOT__mem[t]);
+                                    unsigned want = e000[which * 2048 + t*4 + lane];
+                                    if (got != want) {
+                                        if (fb < 0) fb = t*4 + lane;
+                                        if (b < 6)
+                                            printf("    e%03x cell %3d lane %d: shadow %02x, mame %02x\n",
+                                                   which * 0x800 + t*4 + lane, t, lane, got, want);
+                                        b++;
+                                    }
+                                }
+                            printf("  SHADOW spr%d: %ld of 2048 bytes differ from MAME%s\n",
+                                   which + 1, b, b ? "" : " (identical)");
+                        }
+
+                        // The tilemaps, where the text cells live. A cell is
+                        // two bytes -- code then attribute -- in separate
+                        // memories, so the dump's even bytes are lane 0 and
+                        // its odd bytes lane 1.
+                        auto &r2 = *dut->rootp;
+                        auto cmp_map = [&](const char *label, std::vector<unsigned char> &src,
+                                           size_t off, size_t len, unsigned base,
+                                           auto &m0, auto &m1) {
+                            if (src.size() < off + len) return;
+                            long b = 0; int fb = -1;
+                            for (size_t i = 0; i < len; i++) {
+                                unsigned got = (i & 1) ? m1[i / 2] : m0[i / 2];
+                                if (got != src[off + i]) {
+                                    if (fb < 0) fb = (int)i;
+                                    if (b < 8) {
+                                        unsigned cell = (unsigned)(i / 2);
+                                        printf("    %04x cell %3u (row %2u col %2u) %s: rtl %02x, mame %02x\n",
+                                               (unsigned)(base + i), cell, cell / 32, cell % 32,
+                                               (i & 1) ? "attr" : "code", got, src[off + i]);
+                                    }
+                                    b++;
+                                }
+                            }
+                            printf("  %s: %ld of %zu bytes differ from MAME%s",
+                                   label, b, len, b ? "" : " (identical)");
+                            if (b) printf(", first at %04x", base + fb);
+                            printf("\n");
+                        };
+                        if (dut->armwrest) {
+                            cmp_map("fg map  (d800)", vr["VRAM_D800"], 0, 0x800, 0xd800,
+                                    r2.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_fg0__DOT__mem,
+                                    r2.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_fg1__DOT__mem);
+                            cmp_map("bot map (f000)", vr["VRAM_F000"], 0, 0x800, 0xf000,
+                                    r2.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_bgb0__DOT__mem,
+                                    r2.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_bgb1__DOT__mem);
+                            cmp_map("top map (f800)", vr["VRAM_F000"], 0x800, 0x800, 0xf800,
+                                    r2.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_bgt0__DOT__mem,
+                                    r2.tb_system_top__DOT__u_core__DOT__u_video__DOT__u_bgt1__DOT__mem);
+                        }
                     }
                 }
                 printf("  spr1 ctrl %016llx  spr2 ctrl %010llx  palbank %02x\n",
