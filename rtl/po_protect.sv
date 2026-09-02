@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: (c) 2026 plasticbugs
+//
+// Part of an Analogue Pocket openFPGA core for Nintendo's Punch-Out!! board.
+// Hardware behaviour derived from MAME's nintendo/punchout.cpp by Nicola
+// Salmoria; see README.md for full credits.
 //! Super Punch-Out!! protection: RP5C01 RTC + RP5H01 one-time PROM.
 //!
 //! The CHP1 board carries two extra chips that Punch-Out!! does not use. They

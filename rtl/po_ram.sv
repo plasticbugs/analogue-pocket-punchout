@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: (c) 2026 plasticbugs
+//
+// Part of an Analogue Pocket openFPGA core for Nintendo's Punch-Out!! board.
+// Hardware behaviour derived from MAME's nintendo/punchout.cpp by Nicola
+// Salmoria; see README.md for full credits.
 //------------------------------------------------------------------------------
 // Block RAM primitives for the Punch-Out!! core.
 //

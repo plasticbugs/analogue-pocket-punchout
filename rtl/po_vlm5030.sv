@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: (c) 2026 plasticbugs
+//
+// Part of an Analogue Pocket openFPGA core for Nintendo's Punch-Out!! board.
+// Hardware behaviour derived from MAME's nintendo/punchout.cpp by Nicola
+// Salmoria; see README.md for full credits.
 //! Sanyo VLM5030 speech synthesiser, after MAME's vlm5030.cpp.
 //!
 //! The announcer. A 48-bit LPC frame every 4 interpolation periods of

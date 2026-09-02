@@ -185,17 +185,67 @@ looked like on the way.
 
 ## Credits
 
-* MAME's `nintendo/punchout.cpp` by Nicola Salmoria — the hardware description
-  this core is derived from.
-* [tv80](https://github.com/hutch31/tv80) Z80 (MIT).
-* T65 6502 by Daniel Wallner and MikeJ (BSD), via MiSTer's VIC20 core.
-* NES APU by Kitrinx (GPLv3), via
-  [NES_MiSTer](https://github.com/MiSTer-devel/NES_MiSTer).
-* VLM5030 after MAME's `vlm5030.cpp` by Tatsuyuki Satoh (BSD-3-Clause), with
-  the chip's coefficient tables recovered from decaps by ogoun and John
-  McMaster.
-* The Pocket platform layer from the OpenGateware framework, including its
-  scanline and shadow-mask filters, and Adam Gastineau's data loader and
-  unloader.
+Very little of a core like this is invented. The hardware description came from
+people who reverse-engineered the board, the CPUs came from projects that
+predate this one by twenty years, and the platform layer came from a framework
+that makes an openFPGA core buildable at all.
 
-GPLv3. See `LICENSE`.
+### The hardware description
+
+* MAME's `nintendo/punchout.cpp`, `punchout_v.cpp` and `punchout.h` by **Nicola
+  Salmoria** — the description of the board this core is derived from, read at
+  MAME 0.288. `docs/hardware.md` cites it throughout.
+* MAME's `rp5c01.cpp` and `rp5h01.cpp` device models — the source for Super
+  Punch-Out!!'s RTC and one-time-PROM protection, transcribed in
+  `rtl/po_protect.sv` and `tools/protection.py`.
+* MAME's `vlm5030.cpp` by **Tatsuyuki Satoh** (BSD-3-Clause) — the speech
+  synthesiser, with the chip's coefficient tables recovered from decaps by
+  **ogoun** and **John McMaster**.
+
+### CPUs and sound
+
+* [tv80](https://github.com/hutch31/tv80) Z80 by **Guy Hutchison** (MIT), itself
+  based on Daniel Wallner's T80.
+* T65 6502 by **Daniel Wallner**, **Mike Johnson**, **Wolfgang Scherr** and
+  **Morten Leikvoll** (BSD), via MiSTer's VIC20 core.
+* NES APU by **Kitrinx** (GPLv3), via
+  [NES_MiSTer](https://github.com/MiSTer-devel/NES_MiSTer).
+
+### Platform layer
+
+* The Pocket platform layer is the [OpenGateware](https://github.com/opengateware)
+  framework, whose primary author is **Marcus Andrade** (MIT and GPLv3). Within
+  it this core also uses work by **Alexey Melnikov** (SDRAM controller, scanline,
+  shadow-mask and audio filters), **Mike Field** (the original SDRAM
+  controller), **Jim Gregory** and **Alan Steremberg** (hiscore/NVRAM),
+  **Jacob Boline** (USB-HID keyboard), **Till Harbaum** (scanline generator)
+  and **Adam Gastineau** (data loader and unloader).
+* `rtl/sdram16.sv` is OpenGateware's SDRAM controller, © Alexey Melnikov and
+  Mike Field (GPLv3).
+* PLL and memory wrappers under `core_pll/` and `platform/pocket/megafunctions/`
+  are generated Altera/Intel megafunction instantiations.
+
+### Licensing
+
+Copyright © 2026 plasticbugs. This project is GPLv3 — see `LICENSE`. Two things
+it does **not** cover:
+
+* `platform/pocket/bsp/pocket/apf_top.sv` and the APF bridge peripherals in
+  `platform/pocket/peripherals/` are supplied by **Analogue Enterprises
+  Limited** under the Analogue Pocket Framework Software License Agreement and
+  [EULA](https://www.analogue.link/pocket-eula), not under the GPL. `core_top.sv`
+  and the synchronisers also carry Analogue copyright.
+* The vendored CPU cores keep their own licences (MIT for tv80, BSD for T65);
+  their headers are intact and must stay that way in any redistribution.
+
+No ROM data of any kind is included, and none may be added — see **ROM
+distribution** above.
+
+### Tools
+
+* **MAME 0.288** as the oracle: not just a thing to compare against but a
+  scriptable instrument, driven by the Lua scripts in `tools/` to freeze state,
+  tap writes and dump the screen.
+* **Verilator** for simulation and lint, **Quartus Prime Lite 18.1** for
+  synthesis (via the `raetro/quartus:pocket` image), **Python 3** for the
+  reference renderers and the ROM builder — no third-party Python modules.
