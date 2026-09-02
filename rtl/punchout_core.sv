@@ -29,6 +29,9 @@ module punchout_core (
     input  wire   [1:0] ovl_mode,        // 0 off, 1 status, 2 faults (freezes on one), 3 black probe (freezes on a hit)
     input  wire   [1:0] probe_page,      // which 16 bits of the probe record the overlay shows
     input  wire   [1:0] vid_mode,        // 0 palette, 1 raw index, 2 writer tag, 3 index 7 white
+    //! ---- which game the loaded image holds. Arm Wrestling runs on the same
+    //!      board but has its own image layout, video RAM map and tilemaps.
+    input  wire         armwrest,
     input  wire   [1:0] rtest,           // render tests: bit 0 background from live RAM, bit 1 sprites off
     input  wire   [3:0] cur_move,        // inspector crosshair: {down, up, left, right}, held
     input  wire         cur_fast,        // ...in steps of 8
@@ -121,7 +124,8 @@ module punchout_core (
     wire  [7:0] ld_data;
     wire        ld_we;
     po_romload u_load (.dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
-                       .sd_addr(ld_addr), .sd_data(ld_data), .sd_we(ld_we));
+                       .sd_addr(ld_addr), .sd_data(ld_data), .sd_we(ld_we),
+                       .armwrest(armwrest));
 
     logic [32:0] wfifo [0:255];
     logic  [8:0] wf_wp, wf_rp;
@@ -329,7 +333,7 @@ module punchout_core (
         .spr1_ctrl(spr1_ctrl), .spr2_ctrl(spr2_ctrl), .palettebank(palettebank),
         .sd_addr(vid_sd_addr), .sd_rd(vid_sd_rd),
         .sd_dout16(sd_dout16), .sd_ready(sd_ready),
-        .ovl_en(ovl_en), .ovl_stat(ovl_stat),
+        .ovl_en(ovl_en), .ovl_stat(ovl_stat), .armwrest(armwrest),
         .ovl_en2(ovl_mode == 2'd3), .ovl_stat2(ovl_stat2),
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
@@ -397,7 +401,7 @@ module punchout_core (
     po_vlm5030 u_vlm (
         .clk(clk), .reset(mach_reset),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
-        .rst(vlm_rst), .st(vlm_st), .vcu(vlm_vcu), .data(vlm_data),
+        .rst(vlm_rst), .st(vlm_st), .vcu(vlm_vcu), .data(vlm_data), .armwrest(armwrest),
         .busy(vlm_busy), .sample(vlm_sample), .sample_ce(vlm_sample_ce));
 
     // Both NMIs fire once per frame, from the raster -- earlier in the frame

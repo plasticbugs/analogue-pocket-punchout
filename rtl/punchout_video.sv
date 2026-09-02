@@ -97,6 +97,9 @@ module punchout_video (
     //!      Cleared by probe_clr.
     input  wire         probe_clr,
     input  wire   [1:0] vid_mode,         // 0 palette, 1 raw index, 2 writer tag, 3 index 7 in white
+    //! ---- Arm Wrestling: a third tilemap, one character set shared by both
+    //!      monitors, no row scroll, and its own image layout
+    input  wire         armwrest,
     //! ---- the inspector's crosshair: parked on the hit pixel by the probe,
     //!      then moved with the pad; the record is of the pixel under it
     //! ---- render tests, to bisect a hardware-only fault:
@@ -150,8 +153,13 @@ module punchout_video (
     localparam logic [9:0] NMI_ROW  = 10'd520;
     localparam logic [9:0] TOP_XOFF = 10'd128;        // (512 - 256) / 2, to centre it
 
-    localparam [31:0] WIDTHSHIFTED  = 32'd128 << 16;  // both sprite tilemaps
-    localparam [31:0] HEIGHTSHIFTED = 32'd256 << 16;  // are 128 x 256
+    // Punch-Out!!'s sprite tilemaps are 16x32 tiles, 128 x 256 pixels. Arm
+    // Wrestling turns big sprite #1 on its side: 32x16 tiles, 256 x 128. Big
+    // sprite #2 is 16x32 on both.
+    localparam [31:0] WIDTHSHIFTED  = 32'd128 << 16;
+    localparam [31:0] HEIGHTSHIFTED = 32'd256 << 16;
+    wire       [31:0] WIDTH1  = armwrest ? (32'd256 << 16) : WIDTHSHIFTED;
+    wire       [31:0] HEIGHT1 = armwrest ? (32'd128 << 16) : HEIGHTSHIFTED;
 
     // ce_pix divides the 96 MHz system clock down to the 24 MHz dot clock, so
     // the renderer gets 2240 clocks per output row.
@@ -240,15 +248,23 @@ module punchout_video (
     // renderer's port of the shadow, which is idle: the renderer only runs for
     // rows that will be displayed.
     // =========================================================================
-    wire vsel_top = (cpu_vaddr[15:11] == 5'b11011); // d800-dfff
-    wire vsel_spr = (cpu_vaddr[15:12] == 4'b1110);  // e000-efff
-    wire vsel_bot = (cpu_vaddr[15:12] == 4'b1111);  // f000-ffff
+    // Punch-Out!!:    d800-dfff top map, f000-ffff bottom map (64 columns)
+    // Arm Wrestling:  d800-dfff foreground, f000-f7ff bottom, f800-ffff top,
+    //                 both backgrounds 32 columns
+    wire vsel_d800 = (cpu_vaddr[15:11] == 5'b11011); // d800-dfff
+    wire vsel_spr  = (cpu_vaddr[15:12] == 4'b1110);  // e000-efff
+    wire vsel_f000 = (cpu_vaddr[15:12] == 4'b1111);  // f000-ffff
+    wire vsel_top  = armwrest ? (vsel_f000 &&  cpu_vaddr[11]) : vsel_d800;
+    wire vsel_bot  = armwrest ? (vsel_f000 && !cpu_vaddr[11]) : vsel_f000;
+    wire vsel_fg   = armwrest && vsel_d800;
     wire spr_hi   = cpu_vaddr[11];                  // 0 = spr1, 1 = spr2
 
     logic  [9:0] bgt_ridx;
     logic [10:0] bgb_ridx;
     logic  [8:0] s1_ridx, s2_ridx;
     logic  [7:0] bgt_code, bgt_attr, bgb_code, bgb_attr;       // what the renderer sees
+    logic  [9:0] fg_ridx;
+    logic  [7:0] fg_code, fg_attr;
     logic  [7:0] bgt_code_s, bgt_attr_s, bgb_code_s, bgb_attr_s; // ...from the shadow
     logic  [7:0] bgt_q0, bgt_q1, bgb_q0, bgb_q1;
     logic  [7:0] s1_b [0:3];
@@ -279,8 +295,10 @@ module punchout_video (
     end
 
     // ---- write-through: a CPU write during the walk, three clocks later, into
-    //      the shadow. {top code, top attr, bot code, bot attr, spr1 x4, spr2 x4}
-    wire [11:0] wt_sel = {
+    //      the shadow. {fg code, fg attr, top code, top attr, bot code,
+    //      bot attr, spr1 x4, spr2 x4}
+    wire [13:0] wt_sel = {
+        cpu_vwe && vsel_fg  && !cpu_vaddr[0], cpu_vwe && vsel_fg  &&  cpu_vaddr[0],
         cpu_vwe && vsel_top && !cpu_vaddr[0], cpu_vwe && vsel_top &&  cpu_vaddr[0],
         cpu_vwe && vsel_bot && !cpu_vaddr[0], cpu_vwe && vsel_bot &&  cpu_vaddr[0],
         cpu_vwe && vsel_spr && !spr_hi && (cpu_vaddr[1:0] == 2'd0),
@@ -291,8 +309,8 @@ module punchout_video (
         cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == 2'd1),
         cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == 2'd2),
         cpu_vwe && vsel_spr &&  spr_hi && (cpu_vaddr[1:0] == 2'd3)};
-    logic [11:0] wt_s1, wt_s2;
-    logic [11:0] wt_s3 /* verilator public_flat_rd */;
+    logic [13:0] wt_s1, wt_s2;
+    logic [13:0] wt_s3 /* verilator public_flat_rd */;
     // for the bench: a CPU write to any video RAM this clock, and the walk
     wire         cp_wr_now  /* verilator public_flat_rd */ = |wt_sel;
     wire         cp_walking /* verilator public_flat_rd */ = cp_run;
@@ -302,7 +320,7 @@ module punchout_video (
         if (reset) begin
             wt_s1 <= '0; wt_s2 <= '0; wt_s3 <= '0;
         end else begin
-            wt_s1 <= cp_run ? wt_sel : 12'd0;
+            wt_s1 <= cp_run ? wt_sel : 14'd0;
             wt_s2 <= wt_s1;
             wt_s3 <= wt_s2;
         end
@@ -342,9 +360,28 @@ module punchout_video (
         .a_d(cpu_vdin), .a_q(bgb_q1),
         .b_addr(rtest[0] ? bgb_ridx : cp_a), .b_we(1'b0), .b_d(8'h00), .b_q(bgb_l1));
 
+    // Arm Wrestling's foreground map: 32x32, drawn over everything on the
+    // bottom monitor. Copied during the same walk as the top map, which also
+    // covers only the low half.
+    logic [7:0] fg_l0, fg_l1, fg_q0, fg_q1, fg_code_s, fg_attr_s;
+    po_dpram #(.AW(10), .DW(8)) u_fg0 (.clk(clk),
+        .a_addr(cpu_vaddr[10:1]), .a_we(cpu_vwe && vsel_fg && !cpu_vaddr[0]),
+        .a_d(cpu_vdin), .a_q(fg_q0),
+        .b_addr(rtest[0] ? fg_ridx : cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(fg_l0));
+    po_dpram #(.AW(10), .DW(8)) u_fg1 (.clk(clk),
+        .a_addr(cpu_vaddr[10:1]), .a_we(cpu_vwe && vsel_fg &&  cpu_vaddr[0]),
+        .a_d(cpu_vdin), .a_q(fg_q1),
+        .b_addr(rtest[0] ? fg_ridx : cp_a[9:0]), .b_we(1'b0), .b_d(8'h00), .b_q(fg_l1));
+
     // shadow copies: port A the copier; port B the renderer, and the
     // write-through while the renderer is idle
     /* verilator lint_off PINCONNECTEMPTY */
+    po_dpram #(.AW(10), .DW(8)) u_sfg0 (.clk(clk),
+        .a_addr(cp_wa[9:0]), .a_we(cp_we && !cp_wa[10]), .a_d(fg_l0), .a_q(),
+        .b_addr(wt_s3[13] ? wt_a3[9:0] : fg_ridx), .b_we(wt_s3[13]), .b_d(wt_d3), .b_q(fg_code_s));
+    po_dpram #(.AW(10), .DW(8)) u_sfg1 (.clk(clk),
+        .a_addr(cp_wa[9:0]), .a_we(cp_we && !cp_wa[10]), .a_d(fg_l1), .a_q(),
+        .b_addr(wt_s3[12] ? wt_a3[9:0] : fg_ridx), .b_we(wt_s3[12]), .b_d(wt_d3), .b_q(fg_attr_s));
     po_dpram #(.AW(10), .DW(8)) u_sbgt0 (.clk(clk),
         .a_addr(cp_wa[9:0]), .a_we(cp_we && !cp_wa[10]), .a_d(bgt_l0), .a_q(),
         .b_addr(wt_s3[11] ? wt_a3[9:0] : bgt_ridx), .b_we(wt_s3[11]), .b_d(wt_d3), .b_q(bgt_code_s));
@@ -359,6 +396,8 @@ module punchout_video (
         .b_addr(wt_s3[8] ? wt_a3 : bgb_ridx), .b_we(wt_s3[8]), .b_d(wt_d3), .b_q(bgb_attr_s));
     // the renderer's view: the shadow, or under test the live RAM directly
     // (same one-cycle read latency on both)
+    assign fg_code  = rtest[0] ? fg_l0 : fg_code_s;
+    assign fg_attr  = rtest[0] ? fg_l1 : fg_attr_s;
     assign bgt_code = rtest[0] ? bgt_l0 : bgt_code_s;
     assign bgt_attr = rtest[0] ? bgt_l1 : bgt_attr_s;
     assign bgb_code = rtest[0] ? bgb_l0 : bgb_code_s;
@@ -391,17 +430,19 @@ module punchout_video (
 
     // CPU read-back, one cycle behind the address, same as the memories.
     logic [1:0] cq_lane;
-    logic       cq_low, cq_top, cq_spr, cq_bot, cq_hi;
+    logic       cq_low, cq_top, cq_spr, cq_bot, cq_hi, cq_fg;
     always_ff @(posedge clk) begin
         cq_lane <= cpu_vaddr[1:0];
         cq_low  <= cpu_vaddr[0];
         cq_top  <= vsel_top;
+        cq_fg   <= vsel_fg;
         cq_spr  <= vsel_spr;
         cq_bot  <= vsel_bot;
         cq_hi   <= spr_hi;
     end
     always_comb begin
-        if      (cq_top) cpu_vq = cq_low ? bgt_q1 : bgt_q0;
+        if      (cq_fg)  cpu_vq = cq_low ? fg_q1  : fg_q0;
+        else if (cq_top) cpu_vq = cq_low ? bgt_q1 : bgt_q0;
         else if (cq_bot) cpu_vq = cq_low ? bgb_q1 : bgb_q0;
         else if (cq_spr) cpu_vq = cq_hi ? s2_cq[cq_lane] : s1_cq[cq_lane];
         else             cpu_vq = 8'hff;
@@ -413,7 +454,9 @@ module punchout_video (
     // monitors cannot disagree about it.
     // -------------------------------------------------------------------------
     logic [8:0] rs_shadow [0:31];
-    wire        rs_hit = cpu_vwe && vsel_bot && (cpu_vaddr[11:6] == 6'd0);
+    // Arm Wrestling has no row scroll: f000-f03f is tilemap row 0 and nothing
+    // else, so nothing shadows it and every row draws at scroll 0.
+    wire        rs_hit = !armwrest && cpu_vwe && vsel_bot && (cpu_vaddr[11:6] == 6'd0);
     wire  [4:0] rs_idx = cpu_vaddr[5:1];
 
     integer ri;
@@ -431,30 +474,47 @@ module punchout_video (
     // memory per bit plane so a tile row is a single read. gfx3 and gfx4 are
     // far too big for block RAM and live in SDRAM (docs/hardware.md section 9).
     // =========================================================================
+    // Arm Wrestling's character generator is wired differently, so its image
+    // has its own region bases: gfx1 is 32 KB shared by both monitors and gfx2
+    // is 48 KB of three-plane foreground characters. The memories below are
+    // sized for that; Punch-Out!! fills the lower half of each and never
+    // addresses the rest.
     localparam [24:0] BASE_GFX1 = 25'h0E000;
-    localparam [24:0] BASE_GFX2 = 25'h12000;
-    localparam [24:0] BASE_GFX3 = 25'h16000;
-    localparam [24:0] BASE_PROM = 25'h56000;
-    localparam [24:0] END_PROM  = 25'h56C00;
+    wire [24:0] BASE_GFX2 = armwrest ? 25'h16000 : 25'h12000;
+    wire [24:0] BASE_GFX3 = armwrest ? 25'h22000 : 25'h16000;
+    wire [24:0] BASE_PROM = armwrest ? 25'h62000 : 25'h56000;
+    wire [24:0] END_PROM  = BASE_PROM + 25'h00C00;
+    // one plane of characters: 8 KB for Punch-Out!!, 16 KB for Arm Wrestling
+    wire [14:0] PLANE_SZ  = armwrest ? 15'h4000 : 15'h2000;
 
     wire        in_gfx1 = (dl_addr >= BASE_GFX1) && (dl_addr < BASE_GFX2);
     wire        in_gfx2 = (dl_addr >= BASE_GFX2) && (dl_addr < BASE_GFX3);
     wire        in_prom = (dl_addr >= BASE_PROM) && (dl_addr < END_PROM);
-    wire [13:0] g1_off  = dl_addr[13:0] - BASE_GFX1[13:0];
-    wire [13:0] g2_off  = dl_addr[13:0] - BASE_GFX2[13:0];
+    wire [15:0] g1_off  = dl_addr[15:0] - {1'b0, BASE_GFX1[14:0]};
+    wire [15:0] g2_off  = dl_addr[15:0] - {1'b0, BASE_GFX2[14:0]};
     wire [11:0] pr_off  = dl_addr[11:0] - BASE_PROM[11:0];
+    // which plane a loading byte belongs to, and where in that plane
+    wire  [1:0] g1_pl   = armwrest ? {1'b0, g1_off[14]} : {1'b0, g1_off[13]};
+    wire  [1:0] g2_pl   = armwrest ? (g2_off[15:14] == 2'd0 ? 2'd0 :
+                                      g2_off[15:14] == 2'd1 ? 2'd1 : 2'd2)
+                                   : {1'b0, g2_off[13]};
+    wire [13:0] g1_wa   = armwrest ? g1_off[13:0] : {1'b0, g1_off[12:0]};
+    wire [13:0] g2_wa   = armwrest ? g2_off[13:0] : {1'b0, g2_off[12:0]};
 
-    logic [12:0] gfx_ridx;
-    logic  [7:0] g1_p0, g1_p1, g2_p0, g2_p1;
+    logic [13:0] gfx_ridx;
+    logic  [7:0] g1_p0, g1_p1, g2_p0, g2_p1, g2_p2;
 
-    po_spram_dp #(.AW(13), .DW(8)) u_g1p0 (.clk(clk), .wa(g1_off[12:0]),
-        .we(dl_we && in_gfx1 && !g1_off[13]), .d(dl_data), .ra(gfx_ridx), .q(g1_p0));
-    po_spram_dp #(.AW(13), .DW(8)) u_g1p1 (.clk(clk), .wa(g1_off[12:0]),
-        .we(dl_we && in_gfx1 &&  g1_off[13]), .d(dl_data), .ra(gfx_ridx), .q(g1_p1));
-    po_spram_dp #(.AW(13), .DW(8)) u_g2p0 (.clk(clk), .wa(g2_off[12:0]),
-        .we(dl_we && in_gfx2 && !g2_off[13]), .d(dl_data), .ra(gfx_ridx), .q(g2_p0));
-    po_spram_dp #(.AW(13), .DW(8)) u_g2p1 (.clk(clk), .wa(g2_off[12:0]),
-        .we(dl_we && in_gfx2 &&  g2_off[13]), .d(dl_data), .ra(gfx_ridx), .q(g2_p1));
+    po_spram_dp #(.AW(14), .DW(8)) u_g1p0 (.clk(clk), .wa(g1_wa),
+        .we(dl_we && in_gfx1 && g1_pl == 2'd0), .d(dl_data), .ra(gfx_ridx), .q(g1_p0));
+    po_spram_dp #(.AW(14), .DW(8)) u_g1p1 (.clk(clk), .wa(g1_wa),
+        .we(dl_we && in_gfx1 && g1_pl == 2'd1), .d(dl_data), .ra(gfx_ridx), .q(g1_p1));
+    po_spram_dp #(.AW(14), .DW(8)) u_g2p0 (.clk(clk), .wa(g2_wa),
+        .we(dl_we && in_gfx2 && g2_pl == 2'd0), .d(dl_data), .ra(gfx_ridx), .q(g2_p0));
+    po_spram_dp #(.AW(14), .DW(8)) u_g2p1 (.clk(clk), .wa(g2_wa),
+        .we(dl_we && in_gfx2 && g2_pl == 2'd1), .d(dl_data), .ra(gfx_ridx), .q(g2_p1));
+    // third plane, Arm Wrestling's foreground only
+    po_spram_dp #(.AW(14), .DW(8)) u_g2p2 (.clk(clk), .wa(g2_wa),
+        .we(dl_we && in_gfx2 && g2_pl == 2'd2), .d(dl_data), .ra(gfx_ridx), .q(g2_p2));
 
     // Six 512-byte colour PROMs, low nibble only. Address is {bank, index}.
     logic [8:0] pal_ra;
@@ -478,12 +538,13 @@ module punchout_video (
     always_ff @(posedge clk) begin
         if (reset) begin
             spr1_snap <= '0; spr2_snap <= '0; palbank_l <= '0;
-            for (si = 0; si < 32; si++) rowscroll[si] <= 9'd58;
+            for (si = 0; si < 32; si++) rowscroll[si] <= armwrest ? 9'd0 : 9'd58;
         end else if (cp_done) begin   // the same instant as the tilemap snapshot
             spr1_snap <= spr1_ctrl;
             spr2_snap <= spr2_ctrl;
             palbank_l <= palettebank;
-            for (si = 0; si < 32; si++) rowscroll[si] <= rs_shadow[si] + 9'd58;
+            for (si = 0; si < 32; si++)
+                rowscroll[si] <= armwrest ? 9'd0 : (rs_shadow[si] + 9'd58);
         end
     end
 
@@ -500,7 +561,7 @@ module punchout_video (
     logic [7:0]  c1 [0:7];
     logic [7:0]  c2 [0:4];
     logic [11:0] zoom;
-    logic        spr1_top_en, spr1_bot_en;
+    logic        spr1_top_en, spr1_bot_en, spr1_flipx;
 
     logic signed [31:0] incxx1, incyy1, incxx2;
     logic        [31:0] startx1, starty1_init, startx2, starty2_init;
@@ -538,6 +599,7 @@ module punchout_video (
                 FS_LATCH: begin
                     for (li = 0; li < 8; li++) c1[li] <= spr1_snap[8*li +: 8];
                     for (li = 0; li < 5; li++) c2[li] <= spr2_snap[8*li +: 8];
+                    spr1_flipx  <= spr1_snap[48];       // dff6 bit 0
                     spr1_top_en <= spr1_snap[56];       // dff7 bit 0
                     spr1_bot_en <= spr1_snap[57];       // dff7 bit 1
                     zoom        <= {spr1_snap[11:8], spr1_snap[7:0]};
@@ -545,7 +607,7 @@ module punchout_video (
                 end
 
                 FS_CALC1: begin
-                    sxv1 <= (sx1t > 15'sd3588) ? (sx1t - 15'sd4096) : sx1t;
+                    sxv1 <= (sx1t > (armwrest ? 15'sd2048 : 15'sd3588)) ? (sx1t - 15'sd4096) : sx1t;
                     syv1 <= (sy1t <= (-15'sd256 + zoom64)) ? (sy1t + 15'sd512 + 15'sd12)
                                                           : (sy1t + 15'sd12);
                     sxv2 <= (sx2t > 15'sd385) ? (sx2t - 15'sd512 - 15'sd55)
@@ -570,7 +632,7 @@ module punchout_video (
                     // starty = -sy*0x10000 - 178*zoom + 0x400*zoom, then the
                     // cliprect.top pre-advance of 16 lines.
                     startx1 <= c1[6][0]
-                        ? (WIDTHSHIFTED - 32'((-32'sd1 * 32'(sxv1)) * 32'sd16384 + 32'sd3740 * $signed({20'b0, zoom})) - 32'd1)
+                        ? (WIDTH1 - 32'((-32'sd1 * 32'(sxv1)) * 32'sd16384 + 32'sd3740 * $signed({20'b0, zoom})) - 32'd1)
                         :                 32'((-32'sd1 * 32'(sxv1)) * 32'sd16384 + 32'sd3740 * $signed({20'b0, zoom}));
                     starty1_init <= 32'((-32'sd1 * 32'(syv1)) * 32'sd65536
                                         + 32'sd846 * $signed({20'b0, zoom}))   // 1024 - 178
@@ -591,7 +653,7 @@ module punchout_video (
                     fst  <= FS_SKIP1;
                 end
                 FS_SKIP1: begin
-                    if (sk_x >= WIDTHSHIFTED && sk_n <= 9'd255) begin
+                    if (sk_x >= WIDTH1 && sk_n <= 9'd255) begin
                         sk_x <= sk_x + 32'(incxx1);
                         sk_n <= sk_n + 9'd1;
                     end else begin
@@ -659,6 +721,7 @@ module punchout_video (
         R_BG_INIT, R_BG_A, R_BG_B, R_BG_C, R_BG_EMIT,
         R_S1_START, R_S1_TILE, R_S1_TW, R_S1_R0, R_S1_R1, R_S1_EMIT,
         R_S2_START, R_S2_TILE, R_S2_TW, R_S2_R, R_S2_EMIT,
+        R_FG_INIT, R_FG_A, R_FG_B, R_FG_C, R_FG_EMIT,
         R_DONE
     } rstate_e;
     rstate_e rs;
@@ -668,7 +731,8 @@ module punchout_video (
     logic [8:0] bg_x;          // output pixel 0..256
     logic [8:0] bg_tx;         // bottom map tilemap x, wraps at 512
     logic [2:0] bg_i;          // pixel within the fetched tile
-    logic [7:0] bg_p0, bg_p1;
+    logic [7:0] bg_p0, bg_p1, bg_p2;
+    logic       fg_pass;                //! the renderer is in the foreground pass
     logic [4:0] bg_color;
     logic [7:0] bg_attr_raw, sp_attr_raw;   // for the black probe's tag
     logic [28:0] tag_wd;               // {writer[1:0], attr[7:0], code[7:0], tilemap index[10:0]}
@@ -680,7 +744,7 @@ module punchout_video (
     logic [31:0] cx;
     logic  [8:0] px;
     logic  [7:0] cy;
-    logic  [3:0] tile_col;
+    logic  [4:0] tile_col;
     logic        tile_valid;
     logic  [7:0] rp0, rp1, rp2;
     logic  [5:0] sp_color;
@@ -690,22 +754,40 @@ module punchout_video (
 
     // cx < WIDTHSHIFTED is guaranteed while walking, so the source pixel is
     // cx[22:16]: tile column cx[22:19], pixel within it cx[18:16].
-    wire [3:0] src_col = cx[22:19];
+    wire [4:0] src_col = cx[23:19];
     wire [2:0] src_sub = cx[18:16];
 
     wire [2:0] bg_bit  = bg_flipx ? bg_i : (3'd7 - bg_i);
     wire [1:0] bg_pen  = {bg_p1[bg_bit], bg_p0[bg_bit]};
+    wire [2:0] fg_pen  = {bg_p2[bg_bit], bg_p1[bg_bit], bg_p0[bg_bit]};
     wire [2:0] sp_bit  = sp_flipx ? src_sub : (3'd7 - src_sub);
     wire [2:0] sp1_pen = {rp2[sp_bit], rp1[sp_bit], rp0[sp_bit]};
     wire [1:0] sp2_pen = {rp1[sp_bit], rp0[sp_bit]};
 
     assign bgt_ridx = {vy[7:3], bg_col};
-    assign bgb_ridx = {vy[7:3], bg_tx[8:3]};
-    // tile code is 10 bits: attr[1:0] are the high bits. Address = code*8 + row.
-    assign gfx_ridx = rend_top ? {bgt_attr[1:0], bgt_code, vy[2:0]}
-                               : {bgb_attr[1:0], bgb_code, vy[2:0]};
-    assign s1_ridx  = {cy[7:3], src_col};
-    assign s2_ridx  = {cy[7:3], src_col};
+    // 64 columns on Punch-Out!!'s scrolling bottom map, 32 on Arm Wrestling's
+    assign bgb_ridx = armwrest ? {1'b0, vy[7:3], bg_tx[7:3]} : {vy[7:3], bg_tx[8:3]};
+    assign fg_ridx  = {vy[7:3], bg_col};
+
+    // The character address: code * 8 + row. Punch-Out!!'s codes are 10 bits,
+    // with attr[1:0] on top. Arm Wrestling's top map adds attr[7] as bit 10,
+    // its bottom map is 10 bits into the same set, and its foreground takes
+    // three bits of attr.
+    wire [10:0] code_top = armwrest ? {bgt_attr[7], bgt_attr[1:0], bgt_code}
+                                    : {1'b0, bgt_attr[1:0], bgt_code};
+    wire [10:0] code_bot = {1'b0, bgb_attr[1:0], bgb_code};
+    wire [10:0] code_fg  = {fg_attr[2:0], fg_code};
+    assign gfx_ridx = fg_pass  ? {code_fg,  vy[2:0]}
+                    : rend_top ? {code_top, vy[2:0]}
+                               : {code_bot, vy[2:0]};
+
+    // Big sprite #1 is a 16x32 map on Punch-Out!! and a 32x16 one on Arm
+    // Wrestling, stored as two 16-column halves one after the other; the x
+    // flip picks the other half.
+    wire [4:0] s1_col = (armwrest && spr1_flipx) ? (src_col ^ 5'h10) : src_col;
+    assign s1_ridx  = armwrest ? {s1_col[4], cy[6:3], s1_col[3:0]}
+                               : {cy[7:3], src_col[3:0]};
+    assign s2_ridx  = {cy[7:3], src_col[3:0]};
 
     // Source Y for the two big sprites, computed from the line number rather
     // than accumulated. draw_roz_core steps starty once per screen line, so
@@ -805,12 +887,16 @@ module punchout_video (
                         bg_code_raw <= rend_top ? bgt_code : bgb_code;
                         bg_ridx_raw <= rend_top ? {1'b0, bgt_ridx} : bgb_ridx;
                         bg_color <= rend_top ? bgt_attr[6:2] : bgb_attr[6:2];
-                        bg_flipx <= rend_top ? bgt_attr[7]   : bgb_attr[7];
+                        // Arm Wrestling's top map has no flip bit: attr[7] is
+                        // bit 10 of the tile code there.
+                        bg_flipx <= rend_top ? (!armwrest && bgt_attr[7]) : bgb_attr[7];
                         rs       <= R_BG_C;
                     end
                     R_BG_C: begin
-                        bg_p0 <= rend_top ? g1_p0 : g2_p0;
-                        bg_p1 <= rend_top ? g1_p1 : g2_p1;
+                        // One character set serves both of Arm Wrestling's
+                        // background maps; Punch-Out!! has one per monitor.
+                        bg_p0 <= (rend_top || armwrest) ? g1_p0 : g2_p0;
+                        bg_p1 <= (rend_top || armwrest) ? g1_p1 : g2_p1;
                         bg_i  <= rend_top ? 3'd0 : bg_tx[2:0];
                         rs    <= R_BG_EMIT;
                     end
@@ -839,7 +925,7 @@ module punchout_video (
                         cy <= s1y[23:16];
                         if (rtest[1] || !spr1_on || (sx1 > 9'd255)
                             || (rend_top ? !spr1_top_en : !spr1_bot_en)
-                            || (s1y >= HEIGHTSHIFTED))
+                            || (s1y >= HEIGHT1))
                             rs <= R_S2_START;
                         else
                             rs <= R_S1_TILE;
@@ -893,7 +979,7 @@ module punchout_video (
                             lb_wd <= {sp_color[4:0], sp1_pen};
                             tag_wd <= {2'd1, sp_attr_raw, sp_code[7:0], 11'd0};
                         end
-                        if (px == 9'd255 || (cx + 32'(incxx1)) >= WIDTHSHIFTED) begin
+                        if (px == 9'd255 || (cx + 32'(incxx1)) >= WIDTH1) begin
                             rs <= R_S2_START;
                         end else begin
                             px <= px + 9'd1;
@@ -950,11 +1036,54 @@ module punchout_video (
                             tag_wd <= {2'd2, sp_attr_raw, sp_code[7:0], 11'd0};
                         end
                         if (px == 9'd255 || (cx + 32'(incxx2)) >= WIDTHSHIFTED) begin
-                            rs <= R_DONE;
+                            // Arm Wrestling draws its foreground map over
+                            // everything on the bottom monitor
+                            rs <= (armwrest && !rend_top) ? R_FG_INIT : R_DONE;
                         end else begin
                             px <= px + 9'd1;
                             cx <= cx + 32'(incxx2);
                             rs <= R_S2_TILE;
+                        end
+                    end
+
+                    // ---------------- foreground (Arm Wrestling) ----------
+                    // Three bitplanes, pen 7 transparent, drawn last so it
+                    // covers the sprites.
+                    R_FG_INIT: begin
+                        bg_col <= '0;
+                        bg_x   <= '0;
+                        fg_pass <= 1'b1;
+                        rs     <= R_FG_A;
+                    end
+                    R_FG_A: rs <= R_FG_B;
+                    R_FG_B: begin
+                        bg_color <= fg_attr[7:3];
+                        bg_flipx <= fg_attr[7];
+                        rs       <= R_FG_C;
+                    end
+                    R_FG_C: begin
+                        bg_p0 <= g2_p0;
+                        bg_p1 <= g2_p1;
+                        bg_p2 <= g2_p2;
+                        bg_i  <= 3'd0;
+                        rs    <= R_FG_EMIT;
+                    end
+                    R_FG_EMIT: begin
+                        if (fg_pen != 3'd7) begin
+                            lb_we <= 1'b1;
+                            lb_wa <= bg_x[7:0];
+                            lb_wd <= {bg_color, fg_pen};
+                            tag_wd <= {2'd0, fg_attr, fg_code, 11'd0};
+                        end
+                        bg_x <= bg_x + 9'd1;
+                        if (bg_x == 9'd255) begin
+                            fg_pass <= 1'b0;
+                            rs      <= R_DONE;
+                        end else if (bg_i == 3'd7) begin
+                            bg_col <= bg_col + 5'd1;
+                            rs     <= R_FG_A;
+                        end else begin
+                            bg_i <= bg_i + 3'd1;
                         end
                     end
 

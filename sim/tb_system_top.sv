@@ -41,6 +41,8 @@ module tb_system_top (
     input  wire   [7:0] nv_d,
     output wire   [7:0] nv_q,
     input  wire         nv_clear,
+    //! which game the image holds; the bench sets it from the image size
+    input  wire         armwrest,
     output wire         dbg_line_overrun,
     output wire  [11:0] dbg_worst_line,
     output wire         dbg_dma_req,
@@ -74,7 +76,7 @@ module tb_system_top (
         .ce_pix(ce_pix), .hsync(hsync), .vsync(vsync), .de(de),
         .vid_r(vid_r), .vid_g(vid_g), .vid_b(vid_b),
         .audio(audio), .audio_ce(audio_ce), .vblank_rise(vblank_rise),
-        .nv_addr(nv_addr), .nv_we(nv_we), .nv_d(nv_d), .nv_q(nv_q), .nv_clear(nv_clear), .nv_dirty(), .ext_stat(8'd0),
+        .nv_addr(nv_addr), .nv_we(nv_we), .nv_d(nv_d), .nv_q(nv_q), .nv_clear(nv_clear), .nv_dirty(), .ext_stat(8'd0), .armwrest(armwrest),
         .dbg_apu_wr(dbg_apu_wr), .dbg_apu_addr(dbg_apu_addr), .dbg_apu_data(dbg_apu_data),
         .dram_dq(dq), .dram_a(sa), .dram_ba(sba),
         .dram_dqm_l(sdqml), .dram_dqm_h(sdqmh), .dram_cs_n(scs_n),

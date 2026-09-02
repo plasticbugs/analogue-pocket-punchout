@@ -90,6 +90,11 @@ int main(int argc, char **argv) {
 
     // ---- ROM image, through the real loader path
     auto rom = load_rom(rom_path);
+    // Arm Wrestling's image is 420,864 bytes where Punch-Out!!'s is 371,712,
+    // and its bigger character regions push everything after them up.
+    dut->armwrest = (rom.size() == 0x66C00);
+    const unsigned IMG_GFX3 = dut->armwrest ? 0x22000 : 0x16000;
+    const unsigned IMG_GFX4 = dut->armwrest ? 0x52000 : 0x46000;
     for (size_t a = 0; a < rom.size(); a++) {
         dut->dl_addr = (unsigned)a;
         dut->dl_data = rom[a];
@@ -119,7 +124,7 @@ int main(int argc, char **argv) {
         long bad = 0;
         for (unsigned t = 0; t < 0x10000 && bad < 8; t++) {          // gfx3 tile rows
             for (int p = 0; p < 3; p++) {
-                unsigned char want = rom[0x16000 + p * 0x10000 + t];
+                unsigned char want = rom[IMG_GFX3 + p * 0x10000 + t];
                 unsigned char got  = rd(t * 4 + p);
                 if (want != got) {
                     fprintf(stderr, "gfx3 row %05x plane %d: sdram %02x, image %02x\n",
@@ -130,7 +135,7 @@ int main(int argc, char **argv) {
         }
         for (unsigned t = 0; t < 0x8000 && bad < 16; t++) {          // gfx4 tile rows
             for (int p = 0; p < 2; p++) {
-                unsigned char want = rom[0x46000 + p * 0x8000 + t];
+                unsigned char want = rom[IMG_GFX4 + p * 0x8000 + t];
                 unsigned char got  = rd(0x40000 + t * 2 + p);
                 if (want != got) {
                     fprintf(stderr, "gfx4 row %05x plane %d: sdram %02x, image %02x\n",
@@ -157,7 +162,7 @@ int main(int argc, char **argv) {
         long rbad = 0;
         for (unsigned t = 0x1351 * 8; t < 0x1351 * 8 + 8 && rbad < 6; t++) {
             unsigned got = sdread(t * 4);
-            unsigned want = rom[0x16000 + t] | (rom[0x16000 + 0x10000 + t] << 8);
+            unsigned want = rom[IMG_GFX3 + t] | (rom[IMG_GFX3 + 0x10000 + t] << 8);
             if (got != want) {
                 fprintf(stderr, "controller read of tile row %05x: got %04x, want %04x\n",
                         t, got, want);

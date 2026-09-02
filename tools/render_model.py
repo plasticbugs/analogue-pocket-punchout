@@ -85,14 +85,7 @@ def main():
         print(f'warning: dump reports {st.drift} bytes of drift after freezing; '
               'the bitmaps may not be of the state in this file')
 
-    if getattr(roms, 'game', 'punchout') == 'armwrest':
-        maps = pv.build_pixmaps_armwrest(st, roms)
-        model = {'top': pv.render_top_armwrest(st, roms, maps),
-                 'bot': pv.render_bottom_armwrest(st, roms, maps)}
-    else:
-        maps = pv.build_pixmaps(st, roms)
-        model = {'top': pv.render_top(st, roms, maps),
-                 'bot': pv.render_bottom(st, roms, maps)}
+    model = pv.render_screens(st, roms)
 
     print(f'{os.path.basename(state_path)} (frame {st.frame}):')
     total = 0

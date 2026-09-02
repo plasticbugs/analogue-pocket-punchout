@@ -522,17 +522,27 @@ def render_bottom_armwrest(st, roms, maps, raw=False):
     return _to_rgb(dest, palette_rgb(roms, 'bot', st.palettebank & 1), 0x100)
 
 
+def render_screens(st, roms, raw=False):
+    """Both monitors for whichever game the image holds.
+
+    The one place that chooses between the two video hardwares -- every caller
+    goes through here, because when the choice was written out three times, two
+    of them silently rendered Arm Wrestling with Punch-Out!!'s hardware.
+    """
+    if getattr(roms, 'game', 'punchout') == 'armwrest':
+        maps = build_pixmaps_armwrest(st, roms)
+        return {'top': render_top_armwrest(st, roms, maps, raw),
+                'bot': render_bottom_armwrest(st, roms, maps, raw)}
+    maps = build_pixmaps(st, roms)
+    return {'top': render_top(st, roms, maps, raw),
+            'bot': render_bottom(st, roms, maps, raw)}
+
+
 def render(st, roms):
     """Both monitors stacked the way MAME's dual-screen snapshot stacks them:
     top 0..223, two blank rows, bottom 226..449."""
-    if getattr(roms, 'game', 'punchout') == 'armwrest':
-        maps = build_pixmaps_armwrest(st, roms)
-        top = render_top_armwrest(st, roms, maps)
-        bot = render_bottom_armwrest(st, roms, maps)
-    else:
-        maps = build_pixmaps(st, roms)
-        top = render_top(st, roms, maps)
-        bot = render_bottom(st, roms, maps)
+    scr = render_screens(st, roms)
+    top, bot = scr['top'], scr['bot']
     img = bytearray(256 * 450 * 3)
     img[0:256 * 224 * 3] = top
     img[256 * 226 * 3:256 * 450 * 3] = bot

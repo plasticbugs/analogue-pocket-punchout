@@ -45,6 +45,7 @@ module tb_video_top (
     output wire   [7:0] vid_r,
     output wire   [7:0] vid_g,
     output wire   [7:0] vid_b,
+    input  wire         armwrest,       //! which game's image is loaded
     output wire         vblank_rise,
     output wire         dbg_line_overrun,
     output wire  [11:0] dbg_worst_line
@@ -60,7 +61,7 @@ module tb_video_top (
     wire  [7:0] ld_data;
     wire        ld_we;
     po_romload u_load (.dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
-                       .sd_addr(ld_addr), .sd_data(ld_data), .sd_we(ld_we));
+                       .sd_addr(ld_addr), .sd_data(ld_data), .sd_we(ld_we), .armwrest(armwrest));
 
     // ---- video core's read client
     wire [24:0] vid_addr;
@@ -92,6 +93,7 @@ module tb_video_top (
         .cs_n(scs_n), .ras_n(sras_n), .cas_n(scas_n), .we_n(swe_n), .cke(scke));
 
     punchout_video u_vid (
+        .armwrest(armwrest),
         .clk(clk), .reset(reset || dl_active),
         .dl_addr(dl_addr), .dl_data(dl_data), .dl_we(dl_we),
         .cpu_vaddr(cpu_vaddr), .cpu_vdin(cpu_vdin), .cpu_vwe(cpu_vwe), .cpu_vq(),

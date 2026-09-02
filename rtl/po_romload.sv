@@ -27,12 +27,18 @@ module po_romload (
 
     output logic [24:0] sd_addr,
     output logic  [7:0] sd_data,
-    output logic        sd_we
+    output logic        sd_we,
+    //! Arm Wrestling's image has its own layout: bigger character regions
+    //! push the big-sprite and speech data further up
+    input  wire         armwrest
 );
     // image layout, from docs/hardware.md section 10
-    localparam [24:0] IMG_GFX3 = 25'h1_6000, IMG_GFX3_END = 25'h4_6000;
-    localparam [24:0] IMG_GFX4 = 25'h4_6000, IMG_GFX4_END = 25'h5_6000;
-    localparam [24:0] IMG_VLM  = 25'h5_6C00, IMG_VLM_END  = 25'h5_AC00;
+    wire [24:0] IMG_GFX3 = armwrest ? 25'h2_2000 : 25'h1_6000;
+    wire [24:0] IMG_GFX4 = armwrest ? 25'h5_2000 : 25'h4_6000;
+    wire [24:0] IMG_VLM  = armwrest ? 25'h6_2C00 : 25'h5_6C00;
+    wire [24:0] IMG_GFX3_END = IMG_GFX3 + 25'h3_0000;
+    wire [24:0] IMG_GFX4_END = IMG_GFX4 + 25'h1_0000;
+    wire [24:0] IMG_VLM_END  = IMG_VLM  + 25'h0_4000;
 
     // where they land in SDRAM
     localparam [24:0] SD_GFX3 = 25'h0_0000;   // 0x10000 rows * 4 bytes

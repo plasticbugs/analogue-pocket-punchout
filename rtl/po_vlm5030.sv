@@ -32,13 +32,15 @@ module po_vlm5030 (
     input  wire         rst,
     input  wire         st,
     input  wire         vcu,
+    input  wire         armwrest,       //! selects Arm Wrestling's image layout
     input  wire   [7:0] data,
     output logic        busy /* verilator public_flat_rd */,
     // ---- output: one sample per sample_ce, 10-bit signed
     output logic signed [9:0] sample,
     output logic        sample_ce
 );
-    localparam [24:0] IMG_VLM = 25'h5_6C00, IMG_VLM_END = 25'h5_AC00;
+    wire [24:0] IMG_VLM     = armwrest ? 25'h6_2C00 : 25'h5_6C00;
+    wire [24:0] IMG_VLM_END = IMG_VLM + 25'h0_4000;
     localparam FR_SIZE = 4;
 
     // ---- speech ROM, 16 KB

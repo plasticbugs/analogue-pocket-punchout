@@ -985,6 +985,21 @@ module core_top
     //! ROM: a single slot holding the flat 371,712-byte image built by
     //! tools/mra_build.py. punchout_core decodes the regions itself and sends
     //! the two big-sprite graphics ROMs and the speech data to SDRAM.
+    //! Which game the image holds. The APF announces a slot's size before it
+    //! sends a byte, and the three games' images are different lengths:
+    //! Punch-Out!! and Super Punch-Out!! share a 371,712-byte layout, Arm
+    //! Wrestling's is 420,864 because its character regions are bigger. That
+    //! is the whole of the detection -- no header, no signature, and the two
+    //! Punch-Out!! images keep working untouched.
+    localparam [31:0] IMG_SZ_ARMWREST = 32'd420864;
+    reg         po_armwrest = 1'b0;
+    always_ff @(posedge clk_74a) begin
+        if (dataslot_requestwrite && dataslot_requestwrite_id == 16'h0)
+            po_armwrest <= (dataslot_requestwrite_size == IMG_SZ_ARMWREST);
+    end
+    wire        po_armwrest_s;
+    synch_3 sync_awr(po_armwrest, po_armwrest_s, clk_sys);
+
     wire        ioctl_isROM = ioctl_download && ioctl_index == 16'h0;
     wire        dl_we       = ioctl_isROM && ioctl_wr;
     wire [24:0] dl_addr     = ioctl_addr[24:0];
@@ -1018,18 +1033,26 @@ module core_top
     //! Select and Start both stay on the coin slot.
     wire       po_duck = po_duck_b ? m_btn2 : m_btn3;   // B, or A by default
     wire       po_ko   = po_duck_b ? m_btn3 : m_btn2;
-    wire [7:0] po_in0 = { 1'b0,
-                          ~po_duck,            // d6: 4th button, active low
-                          2'b00,
-                          po_ko,               // KO punch
-                          m_btn4 | m_btn6,     // X or R  -> right punch
-                          1'b0,
-                          m_btn1 | m_btn5 };   // Y or L  -> left punch
+    //! Arm Wrestling rearranges the panel: one button on d5, and the stick's
+    //! UP on d6, active low like Super Punch-Out!!'s fourth button. Its d0/d2/d3
+    //! and IN1's d2/d3 are unconnected. Any face or shoulder button works as
+    //! its single button, since the game has only the one.
+    wire       po_aw_btn = m_btn1 | m_btn2 | m_btn3 | m_btn4 | m_btn5 | m_btn6;
+    wire [7:0] po_in0 = po_armwrest_s
+        ? { 1'b0, ~m_up, 1'b0, po_aw_btn, 4'b0000 }
+        : { 1'b0,
+            ~po_duck,            // d6: 4th button, active low
+            2'b00,
+            po_ko,               // KO punch
+            m_btn4 | m_btn6,     // X or R  -> right punch
+            1'b0,
+            m_btn1 | m_btn5 };   // Y or L  -> left punch
 
     wire [7:0] po_in1 = { m_coin1 | m_start1,  // Select or Start -> coin
                           svc_sw,
                           2'b00,
-                          m_down, m_up, m_left, m_right };
+                          po_armwrest_s ? 2'b00 : {m_down, m_up},
+                          m_left, m_right };
 
     //! DIP switches, XORed onto the factory defaults so 0 always means
     //! "as the machine shipped".
@@ -1080,6 +1103,7 @@ module core_top
         .freeze           ( po_freeze    ),
         .probe_page       ( po_probe_page ),
         .vid_mode         ( po_vid_mode  ),
+        .armwrest         ( po_armwrest_s ),
         .rtest            ( po_rtest     ),
         .cur_move         ( {m_down, m_up, m_left, m_right} ),
         .cur_fast         ( m_btn2 | m_btn3 ),   // KO buttons: 8-pixel steps

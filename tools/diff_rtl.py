@@ -78,9 +78,7 @@ def main():
 
     st = pv.State(state_path)
     roms = pv.Roms(rom_path)
-    maps = pv.build_pixmaps(st, roms)
-    model = {'top': pv.render_top(st, roms, maps),
-             'bot': pv.render_bottom(st, roms, maps)}
+    model = pv.render_screens(st, roms)
 
     tag = os.path.basename(state_path)
     print(f'{tag}:')

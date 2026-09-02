@@ -141,6 +141,7 @@ int main(int argc, char **argv) {
     dut->reset = 1; dut->dl_active = 1; dut->dl_we = 0;
     dut->in0 = 0; dut->in1 = 0;
     dut->nv_addr = 0; dut->nv_we = 0; dut->nv_d = 0; dut->nv_clear = 0;
+    dut->armwrest = 0;      // set from the image size once it is loaded
     dut->dsw1 = 0x00; dut->dsw2 = 0x10;      // factory defaults
     for (int i = 0; i < 64; i++) tick();
     dut->hw_reset = 0;                        // PLL locked; reset stays asserted
@@ -149,6 +150,12 @@ int main(int argc, char **argv) {
     while (guard++ < 400000) tick();          // SDRAM power-up sequence
 
     auto rom = load_file(rom_path);
+    // Arm Wrestling's image is 420,864 bytes where Punch-Out!!'s is 371,712;
+    // the core learns the same fact from the data slot's size
+    dut->armwrest = (rom.size() == 0x66C00);
+    const unsigned IMG_GFX3 = dut->armwrest ? 0x22000 : 0x16000;
+    const unsigned IMG_GFX4 = dut->armwrest ? 0x52000 : 0x46000;
+    printf("image %zu bytes -> %s\n", rom.size(), dut->armwrest ? "Arm Wrestling" : "Punch-Out!!");
     for (size_t a = 0; a < rom.size(); a++) {
         dut->dl_addr = (unsigned)a;
         dut->dl_data = rom[a];
@@ -184,13 +191,13 @@ int main(int argc, char **argv) {
         long bad = 0; unsigned firstbad = 0;
         for (unsigned t = 0; t < 0x10000 && bad < 4; t++)
             for (int p2 = 0; p2 < 3; p2++)
-                if (rom[0x16000 + p2 * 0x10000 + t] != rd(t * 4 + p2)) {
+                if (rom[IMG_GFX3 + p2 * 0x10000 + t] != rd(t * 4 + p2)) {
                     if (!bad) firstbad = t * 4 + p2;
                     bad++;
                 }
         for (unsigned t = 0; t < 0x8000 && bad < 8; t++)
             for (int p2 = 0; p2 < 2; p2++)
-                if (rom[0x46000 + p2 * 0x8000 + t] != rd(0x40000 + t * 2 + p2)) {
+                if (rom[IMG_GFX4 + p2 * 0x8000 + t] != rd(0x40000 + t * 2 + p2)) {
                     if (!bad) firstbad = 0x40000 + t * 2 + p2;
                     bad++;
                 }
