@@ -375,6 +375,38 @@ techniques paid for themselves many times over:
   play session. Report a *toggle* rather than a pulse across a clock crossing,
   and count events so a first-hit latch cannot mislead.
 
+### 5.12 When every input matches and the output does not, it is the state machine
+
+A layer of one game's screen went missing while every measurable input was
+identical to the oracle: both background maps, the foreground map, both sprite
+RAMs, the control registers, the palette bank — and not only the live memory
+but the *shadow* copies the renderer actually reads. The reference renderer,
+handed the same dumped state, reproduced the oracle's frame exactly.
+
+Identical inputs and an identical spec with a different output is a strong
+result, not a dead end: it eliminates the whole data path and leaves only the
+logic that walks it. Three habits follow.
+
+- **Give every early-out its own successor.** The bug was a render pass that
+  belonged to the *screen* being entered from the end of a loop that belonged
+  to an *object*. That is correct while the object is drawn, and silently drops
+  the pass on every line where the loop takes its skip branch. Any state
+  machine whose stages are "background, objects, overlay" must reach the
+  overlay from each of the object stage's exits, not just its natural one.
+- **Reproduce it in the cheapest bench before you theorise.** Hand the exact
+  failing state to the frozen-state bench: minutes of full-system simulation
+  become seconds, and the state machine can be re-run at will.
+- **Let the executable spec name the layer.** Suppressing one layer at a time
+  in the reference renderer and re-diffing says which pass owns the missing
+  pixels, in one cheap experiment, before any RTL is read.
+
+And a caution about the suite itself: **frozen states only prove what they
+contain.** Eight states passed for as long as all eight happened to have the
+object covering the overlay's lines. "Pixel-exact on every state" should always
+be read with "…that we captured" appended — when a whole-run comparison
+disagrees with a passing state suite, believe the run and go capture the state
+it disagrees on.
+
 ---
 
 ## 6. Time Pilot: what changes
