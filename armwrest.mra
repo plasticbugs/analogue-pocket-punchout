@@ -95,6 +95,8 @@
         <part name="chv1-c.6p" crc="31b52896"/>
     </rom>
 
-    <!-- Factory DIP defaults: DSW1 = 0x00, DSW2 = 0x10 -->
-    <buttons names="Left,Right,Special,Coin" default="Y,X,B,Select" count="3"/>
+    <!-- Factory DIP defaults: DSW1 = 0x00, DSW2 = 0x00. Arm Wrestling has no
+         Demo Sounds switch; that bit belongs to its Coinage 2 field, so
+         Punch-Out!!'s 0x10 default asks this game for a different coin rate. -->
+    <buttons names="Action,Coin" default="Y,Select" count="1"/>
 </misterromdescription>

@@ -140,6 +140,8 @@ int main(int argc, char **argv) {
     // hw_reset (PLL lock) drops before loading, reset stays up until after.
     dut->hw_reset = 1;
     dut->reset = 1; dut->dl_active = 1; dut->dl_we = 0;
+    // Arm Wrestling's IN0 d6 is the stick's UP and is active low, so idle is
+    // high; leaving it at zero holds UP pressed for the whole run.
     dut->in0 = 0; dut->in1 = 0;
     dut->nv_addr = 0; dut->nv_we = 0; dut->nv_d = 0; dut->nv_clear = 0;
     dut->armwrest = 0;      // set from the image size once it is loaded
@@ -161,6 +163,7 @@ int main(int argc, char **argv) {
     const unsigned IMG_GFX3 = dut->armwrest ? 0x22000 : 0x16000;
     const unsigned IMG_GFX4 = dut->armwrest ? 0x52000 : 0x46000;
     if (dut->armwrest) dut->dsw2 = 0x00;
+    if (dut->armwrest) dut->in0 = 0x40;      // UP idle high
     printf("image %zu bytes -> %s\n", rom.size(), dut->armwrest ? "Arm Wrestling" : "Punch-Out!!");
     for (size_t a = 0; a < rom.size(); a++) {
         dut->dl_addr = (unsigned)a;
@@ -306,6 +309,17 @@ int main(int argc, char **argv) {
             // PO_LOSE: the same losing fight tools/dumpstate.lua plays in MAME
             // -- coin at 200, then one tap of button 1 at 700, 900 and 1100 to
             // start the round, then stand there and be knocked out.
+            // PO_AWSTART: Arm Wrestling's own sequence -- coin at 200, then a
+            // tap of its single button at 400, 600 and 800. Its button is IN0
+            // d5 and its coin IN1 d7; driving it here is what proves the panel
+            // mapping against MAME rather than against a guess.
+            if (getenv("PO_AWSTART")) {
+                bool coin = frame >= 200 && frame < 206;
+                bool b1 = (frame >= 400 && frame < 406) || (frame >= 600 && frame < 606)
+                       || (frame >= 800 && frame < 806);
+                dut->in1 = coin ? 0x80 : 0x00;      // d7 coin, active high
+                dut->in0 = (b1 ? 0x20 : 0x00) | 0x40;  // d5 button, d6 UP idle high
+            }
             if (getenv("PO_LOSE")) {
                 bool coin = frame >= 200 && frame < 206;
                 bool b1 = (frame >= 700 && frame < 706) || (frame >= 900 && frame < 906)

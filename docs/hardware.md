@@ -626,12 +626,28 @@ I/O map are the same; what differs:
 * **Big sprite #2's ROMs are stored inverted** (MAME's ROMREGION_INVERT); the
   image builder flips them so the core's graphics path is the same for all
   three games.
-* **The panel changes**: one button on IN0 d5, and the stick's UP on IN0 d6,
-  active low. IN0 d0/d2/d3 and IN1 d2/d3 are unconnected.
-* **The DIP switches mean different things.** DSW1[3:0] and DSW2[5:2] are two
-  halves of a coinage table rather than Punch-Out!!'s coinage and demo-sound
-  settings, and DSW2[6] is the rematch count. The core passes the raw bits
-  through, so the menu's Punch-Out!! labels do not describe what they do here.
+* **The panel changes**: one button on IN0 **d5** (mask 0x20), and the stick's
+  UP on IN0 d6, active low. IN0 d0/d2/d3 and IN1 d2/d3 are unconnected, and it
+  has no DOWN at all. IN1 keeps coin 1 on d7, service on d6, LEFT on d1 and
+  RIGHT on d0, and adds a **second coin slot on d5** -- the cabinet has two,
+  and the coinage switches can value them differently.
+* **The DIP switches mean different things, and the defaults differ too.**
+  DSW1[3:0] and DSW2[5:2] are two halves of a coinage table rather than
+  Punch-Out!!'s coinage and demo-sound settings, and DSW2[6] is the rematch
+  count. Arm Wrestling's **factory DSW2 is 0x00**, not the 0x10 the Punch-Out!!s
+  ship with: it has no Demo Sounds switch, and that bit falls inside its
+  Coinage 2 field, so handing it Punch-Out!!'s default asks the machine for a
+  different coin rate. The core passes the raw bits through, so the menu's
+  Punch-Out!! labels do not describe what they do here -- Free Play is
+  Coinage 1, and Round Time, Demo Sounds and Rematch together are Coinage 2.
+
+All of these masks were read out of MAME's own `ioport` tables rather than
+inferred, after a build that had the button one bit low shipped with no way to
+start a game or enter a name. `manager.machine.ioport.ports[tag].fields` lists
+every field with its mask and default, and is the cheapest possible check on a
+panel mapping. Note the same garbage-collection trap the write taps have: the
+value returned by `emu.add_machine_frame_notifier` must be held in a global or
+the callback stops firing partway through a run.
 
 Its image has its own layout (`armwrest.mra`), 420,864 bytes against the
 371,712 the two Punch-Out!!s share, and that length is the whole of the game
