@@ -1,16 +1,10 @@
 Put punchout.rom, spnchout.rom and/or armwrest.rom here.
 
-One core plays all three games. You do not pick the image directly any more:
-the Pocket lists the games by name, and each entry knows which image it needs.
-Those entries are the .json files one folder up, in
+One core plays all three games. Opening the core asks which image to load, and
+this folder is where it looks, so keep whichever ones you build side by side.
 
-    Assets/punchout/plasticbugs.punchout/
-
-so that folder and this one both have to be on the card. A game whose image is
-missing simply will not load; the others still work.
-
-Build the images from your own MAME romsets with the mra_build.py included in
-this release:
+Build them from your own MAME romsets with the mra_build.py included in this
+release:
 
     python3 mra_build.py punchout.mra punchout.zip
     python3 mra_build.py spnchout.mra spnchout.zip
@@ -20,4 +14,6 @@ It checks every ROM's CRC32 and verifies the finished image (371,712 bytes for
 Punch-Out!! and Super Punch-Out!!, 420,864 for Arm Wrestling), so a wrong or
 bad romset is reported rather than silently built.
 
-Records are saved per game, to Saves/punchout/plasticbugs.punchout/.
+Records are kept per game: the save file takes the name of the image you
+loaded, so punchout.rom keeps its records in punchout.sav, and the other two
+games no longer share that file.

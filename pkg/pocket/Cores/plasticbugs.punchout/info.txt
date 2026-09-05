@@ -6,7 +6,7 @@ monitor board, on one Pocket display:
 info screen at native size across the
 top third, the action below it at 2x.
 Neither loses a pixel. One core plays
-all three; pick one from the menu.
+all three; it asks which on launch.
 
 Hardware
 * Z80 4 MHz, main board
@@ -15,6 +15,7 @@ Hardware
 * Two 256x224 monitors
 * Zooming "big sprite" tilemaps
 * RP5C01 + RP5H01 protection
+* A third tilemap for Arm Wrestling
 
 Controls
   D-pad   dodge / duck / block
@@ -23,12 +24,11 @@ Controls
   B       KO punch
   A       duck, Super Punch-Out!!
   Select  coin; a coin starts play
-Arm Wrestling: any button acts;
-Select and Start are its coin slots.
+Arm Wrestling: any button works.
 
-ROMs are not included; build them
-from your own MAME romsets with the
+ROMs are not included. Build from
+your own MAME romsets with the
 included mra_build.py. Records save
-per game. The DIP menu is labelled
-for Punch-Out!!; Arm Wrestling's
-switches differ.
+per game. The DIP menu is
+labelled for Punch-Out!!; Arm
+Wrestling's switches differ.

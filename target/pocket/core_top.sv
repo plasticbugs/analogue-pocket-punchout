@@ -630,7 +630,7 @@ module core_top
         target_dataslot_read     <= 1'b0;
         target_dataslot_getfile  <= 1'b0;
         target_dataslot_openfile <= 1'b0;
-        target_dataslot_id         <= 16'd2;   //! Records; slot 1 is the ROM
+        target_dataslot_id         <= 16'd1;
         target_dataslot_slotoffset <= 32'd0;
         target_dataslot_bridgeaddr <= 32'h2000_0000;
         target_dataslot_length     <= 32'h400;
@@ -994,9 +994,7 @@ module core_top
     localparam [31:0] IMG_SZ_ARMWREST = 32'd420864;
     reg         po_armwrest = 1'b0;
     always_ff @(posedge clk_74a) begin
-        // Slot 1, not 0: slot 0 carries the instance JSON that names which
-        // game to load, and the image itself arrives in slot 1.
-        if (dataslot_requestwrite && dataslot_requestwrite_id == 16'h1)
+        if (dataslot_requestwrite && dataslot_requestwrite_id == 16'h0)
             po_armwrest <= (dataslot_requestwrite_size == IMG_SZ_ARMWREST);
     end
     wire        po_armwrest_s;
@@ -1035,15 +1033,13 @@ module core_top
     //! Select and Start both stay on the coin slot.
     wire       po_duck = po_duck_b ? m_btn2 : m_btn3;   // B, or A by default
     wire       po_ko   = po_duck_b ? m_btn3 : m_btn2;
-    //! Arm Wrestling rearranges the panel: its one button is IN0 d5 (mask 0x20)
-    //! and the stick's UP is d6, active low like Super Punch-Out!!'s fourth
-    //! button. Its d0/d2/d3 and IN1's d2/d3 are unconnected. Any face or
-    //! shoulder button works as its single button, since the game has only one.
-    //! Masks read out of MAME's own ioport tables, not inferred: putting the
-    //! button one bit low left the game with no way to start or to enter a name.
+    //! Arm Wrestling rearranges the panel: one button on d5, and the stick's
+    //! UP on d6, active low like Super Punch-Out!!'s fourth button. Its d0/d2/d3
+    //! and IN1's d2/d3 are unconnected. Any face or shoulder button works as
+    //! its single button, since the game has only the one.
     wire       po_aw_btn = m_btn1 | m_btn2 | m_btn3 | m_btn4 | m_btn5 | m_btn6;
     wire [7:0] po_in0 = po_armwrest_s
-        ? { 1'b0, ~m_up, po_aw_btn, 5'b00000 }
+        ? { 1'b0, ~m_up, 1'b0, po_aw_btn, 4'b0000 }
         : { 1'b0,
             ~po_duck,            // d6: 4th button, active low
             2'b00,
@@ -1052,14 +1048,9 @@ module core_top
             1'b0,
             m_btn1 | m_btn5 };   // Y or L  -> left punch
 
-    //! Arm Wrestling is a two-slot cabinet and its coinage switches can value
-    //! the slots differently, so both are reachable: Select is the left slot
-    //! (IN1 d7) and Start the right (IN1 d5). The Punch-Out!!s have one rate,
-    //! so there both buttons stay on the left slot.
-    wire [7:0] po_in1 = { po_armwrest_s ? m_coin1 : (m_coin1 | m_start1),
+    wire [7:0] po_in1 = { m_coin1 | m_start1,  // Select or Start -> coin
                           svc_sw,
-                          po_armwrest_s ? m_start1 : 1'b0,
-                          1'b0,
+                          2'b00,
                           po_armwrest_s ? 2'b00 : {m_down, m_up},
                           m_left, m_right };
 
@@ -1067,13 +1058,10 @@ module core_top
     //! "as the machine shipped".
     //!   DSW1 0x00 = 1 coin 1 credit, copyright "Nintendo"
     //!   DSW2 0x10 = easy, longest time, demo sounds on
-    //! Arm Wrestling's DSW2 is all zeroes at the factory: it has no Demo Sounds
-    //! switch, and that bit is part of its Coinage 2 field, so shipping
-    //! Punch-Out!!'s 0x10 asked the machine for a different coin rate.
     //! DSW1 bit 4 is not a switch -- it is the speech chip's busy line -- so it
     //! is masked out of whatever the menu offers.
     wire [7:0] po_dsw1 = (8'h00 ^ dip_sw0) & 8'hef;
-    wire [7:0] po_dsw2 = (po_armwrest_s ? 8'h00 : 8'h10) ^ dip_sw1;
+    wire [7:0] po_dsw2 =  8'h10 ^ dip_sw1;
 
     //! The machine
     wire [7:0] po_r, po_g, po_b;

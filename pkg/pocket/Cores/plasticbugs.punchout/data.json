@@ -3,32 +3,20 @@
         "magic": "APF_VER_1",
         "data_slots": [
             {
-                "name": "Arcade Game",
+                "name": "ROM Set",
                 "id": 0,
                 "required": true,
-                "parameters": "0x113",
-                "extensions": [
-                    "json"
-                ],
-                "address": "",
-                "nonvolatile": false
-            },
-            {
-                "name": "ROM",
-                "id": 1,
-                "required": true,
-                "parameters": "0x108",
+                "parameters": "0x9",
                 "extensions": [
                     "rom"
                 ],
-                "address": "0x00000000",
-                "nonvolatile": false
+                "address": "0x00000000"
             },
             {
                 "name": "Records",
-                "id": 2,
+                "id": 1,
                 "required": false,
-                "parameters": "0x22",
+                "parameters": "0x26",
                 "nonvolatile": true,
                 "extensions": [
                     "sav"

@@ -1,5 +1,12 @@
 # Listing several games from one openFPGA core
 
+> **This core does not use the pattern below.** Punch-Out!!, Super Punch-Out!!
+> and Arm Wrestling are near-identical hardware, and a single "ROM Set" slot
+> that asks which image to load is the better fit: one entry, one question, no
+> per-game files to keep in step. The write-up stands for cores where the games
+> genuinely are separate titles -- and the slot-renumbering trap in it applies
+> the moment any core adds a slot ahead of an existing one.
+
 A core that plays more than one game usually starts life with a single ROM data
 slot: the user browses to `punchout.rom` or `spnchout.rom`, and the core works
 out which is which. It plays fine, and it is invisible. The Pocket's menu shows

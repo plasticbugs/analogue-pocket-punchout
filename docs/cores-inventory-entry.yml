@@ -1,0 +1,40 @@
+# Entry for the openFPGA Cores Inventory, which is what pupdate and the other
+# updaters read to learn a core exists and which files it needs.
+#
+#   https://github.com/joshcampbell191/openfpga-cores-inventory
+#
+# This core is not in that inventory, which is why an updater sees at most the
+# one ROM name in data.json rather than all three games. The inventory's assets
+# list takes one entry per file, so listing all three is what makes the other
+# two games visible to tooling -- without changing anything about how the core
+# loads, which stays a single ROM Set slot the player picks from.
+#
+# Submit by adding this block to _data/cores.yml, under the `analogue-pocket`
+# list, in alphabetical order by identifier. Update tag_name, version and
+# release_date to the release being published.
+#
+# The ROMs are not redistributable and no archive hosts them; listing them here
+# tells an updater what the core wants, so it reports them as missing by name
+# instead of not knowing the games exist at all.
+
+- repository: analogue-pocket-punchout
+  display_name: Punch-Out!!, Super Punch-Out!! and Arm Wrestling
+  identifier: plasticbugs.punchout
+  platform: Punch-Out!!
+  release:
+    tag_name: 0.3.2
+    release_date: "2026-09-05T00:00:00Z"
+    version: 0.3.2
+    platform:
+      category: Arcade
+      name: Punch-Out!! & Arm Wrestling
+      year: 1984
+      manufacturer: Nintendo
+    assets:
+      - platform: punchout
+        filename: punchout.rom
+        required: true
+      - platform: punchout
+        filename: spnchout.rom
+      - platform: punchout
+        filename: armwrest.rom
