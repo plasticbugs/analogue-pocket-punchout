@@ -129,6 +129,23 @@ Per-game saves come free: each instance names its own `.sav`, so records stop
 sharing one file. Keeping the first game's filename identical to the old
 single-slot name means existing users keep their records.
 
+## If you keep one slot instead
+
+Two conventions make a single-slot core behave well with several images, both
+checked against the cores installed on a Pocket rather than inferred from the
+documentation:
+
+* **Declare no `filename` on the ROM slot.** A required slot with no filename
+  opens the file browser instead of auto-loading whatever the default happened
+  to be named, which is what you want when the images are interchangeable. This
+  is the norm, not a trick: 220 of the 303 required non-JSON slots on one card
+  do it, `MorganVieira.Rally-X` among them, with the same shape as ours -- one
+  required `rom` slot, no filename.
+* **Set bit 2 on the nonvolatile slot.** The save filename is then cloned from
+  whichever image was loaded, so several games stop sharing one save file. 105
+  nonvolatile slots on that card set it. Keep the first game's image name
+  unchanged and its existing save is still the file it resolves to.
+
 ## Checklist
 
 1. `data.json`: instance slot 0 (`0x113`, extension `json`, empty address), ROM
