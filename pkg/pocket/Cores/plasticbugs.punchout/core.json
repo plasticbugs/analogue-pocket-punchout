@@ -9,8 +9,8 @@
             "description": "Punch-Out!!, Super Punch-Out!! and Arm Wrestling",
             "author": "plasticbugs",
             "url": "https://github.com/plasticbugs/analogue-pocket-punchout",
-            "version": "0.3.2",
-            "date_release": "2026-09-03"
+            "version": "0.4.0",
+            "date_release": "2026-09-05"
         },
         "framework": {
             "target_product": "Analogue Pocket",

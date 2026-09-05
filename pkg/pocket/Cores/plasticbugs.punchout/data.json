@@ -3,23 +3,33 @@
         "magic": "APF_VER_1",
         "data_slots": [
             {
-                "name": "ROM Set",
+                "name": "Arcade Game",
                 "id": 0,
                 "required": true,
-                "parameters": "0x9",
-                "filename": "punchout.rom",
+                "parameters": "0x113",
+                "extensions": [
+                    "json"
+                ],
+                "address": "",
+                "nonvolatile": false
+            },
+            {
+                "name": "ROM",
+                "id": 1,
+                "required": true,
+                "parameters": "0x108",
                 "extensions": [
                     "rom"
                 ],
-                "address": "0x00000000"
+                "address": "0x00000000",
+                "nonvolatile": false
             },
             {
                 "name": "Records",
-                "id": 1,
+                "id": 2,
                 "required": false,
                 "parameters": "0x22",
                 "nonvolatile": true,
-                "filename": "punchout.sav",
                 "extensions": [
                     "sav"
                 ],

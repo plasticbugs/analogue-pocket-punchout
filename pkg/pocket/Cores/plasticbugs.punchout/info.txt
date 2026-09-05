@@ -6,7 +6,7 @@ monitor board, on one Pocket display:
 info screen at native size across the
 top third, the action below it at 2x.
 Neither loses a pixel. One core plays
-all three; pick the image in ROM Set.
+all three; pick one from the menu.
 
 Hardware
 * Z80 4 MHz, main board
@@ -29,6 +29,6 @@ Select and Start are its coin slots.
 ROMs are not included; build them
 from your own MAME romsets with the
 included mra_build.py. Records save
-to the SD card. The DIP menu is
-labelled for Punch-Out!!; Arm
-Wrestling's switches differ.
+per game. The DIP menu is labelled
+for Punch-Out!!; Arm Wrestling's
+switches differ.

@@ -313,6 +313,16 @@ int main(int argc, char **argv) {
             // tap of its single button at 400, 600 and 800. Its button is IN0
             // d5 and its coin IN1 d7; driving it here is what proves the panel
             // mapping against MAME rather than against a guess.
+            // PO_AWMASH: the same losing match tools' awfall.lua plays in
+            // MAME -- coin at 200, then the button mashed two frames on, two
+            // off. Used to hold the RTL to MAME frame by frame through the
+            // losing fall, where a sprite that lingers a frame is visible.
+            if (getenv("PO_AWMASH")) {
+                bool coin = frame >= 200 && frame < 206;
+                bool b1 = frame > 300 && (frame % 4) < 2;
+                dut->in1 = coin ? 0x80 : 0x00;
+                dut->in0 = (b1 ? 0x20 : 0x00) | 0x40;
+            }
             if (getenv("PO_AWSTART")) {
                 bool coin = frame >= 200 && frame < 206;
                 bool b1 = (frame >= 400 && frame < 406) || (frame >= 600 && frame < 606)
@@ -572,6 +582,22 @@ int main(int argc, char **argv) {
                 if (!rt1.empty() && !rb1.empty()) {
                     auto mt1 = mame_rgb(rt1), mb1 = mame_rgb(rb1);
                     dprev = cmp("top", true, mt1) + cmp("bot", false, mb1);
+                }
+                // PO_PHASE: also try the NEXT frame. A core that snapshots at
+                // the start of a frame can legitimately lead MAME, which draws
+                // from video RAM as it stands at the end of one, so "which
+                // frame does this match" is the question, not "does it match".
+                long dnext = -1;
+                if (getenv("PO_PHASE")) {
+                    snprintf(p, sizeof p, "%s/pix_top_%04d.bin", ref_dir, f + 1);
+                    auto rt2 = load_file(p, false);
+                    snprintf(p, sizeof p, "%s/pix_bot_%04d.bin", ref_dir, f + 1);
+                    auto rb2 = load_file(p, false);
+                    if (!rt2.empty() && !rb2.empty()) {
+                        auto mt2 = mame_rgb(rt2), mb2 = mame_rgb(rb2);
+                        dnext = cmp("top", true, mt2) + cmp("bot", false, mb2);
+                    }
+                    printf("  PHASE f-1=%ld  f=%ld  f+1=%ld\n", dprev, d, dnext);
                 }
                 if (d == 0)              printf("  identical to MAME frame %d\n", f);
                 else if (dprev == 0)     printf("  identical to MAME frame %d "
