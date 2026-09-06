@@ -22,9 +22,9 @@
   identifier: plasticbugs.punchout
   platform: Punch-Out!!
   release:
-    tag_name: 0.3.2
-    release_date: "2026-09-05T00:00:00Z"
-    version: 0.3.2
+    tag_name: 0.3.3
+    release_date: "2026-09-06T00:00:00Z"
+    version: 0.3.3
     platform:
       category: Arcade
       name: Punch-Out!! & Arm Wrestling
