@@ -6,7 +6,7 @@ monitor board, on one Pocket display:
 info screen at native size across the
 top third, the action below it at 2x.
 Neither loses a pixel. One core plays
-all three; switch in the ROM menu.
+all three; pick one from the list.
 
 Hardware
 * Z80 4 MHz, main board

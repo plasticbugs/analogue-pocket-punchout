@@ -630,7 +630,7 @@ module core_top
         target_dataslot_read     <= 1'b0;
         target_dataslot_getfile  <= 1'b0;
         target_dataslot_openfile <= 1'b0;
-        target_dataslot_id         <= 16'd1;
+        target_dataslot_id         <= 16'd2;   //! Records; slot 1 is the ROM
         target_dataslot_slotoffset <= 32'd0;
         target_dataslot_bridgeaddr <= 32'h2000_0000;
         target_dataslot_length     <= 32'h400;
@@ -994,7 +994,9 @@ module core_top
     localparam [31:0] IMG_SZ_ARMWREST = 32'd420864;
     reg         po_armwrest = 1'b0;
     always_ff @(posedge clk_74a) begin
-        if (dataslot_requestwrite && dataslot_requestwrite_id == 16'h0)
+        // Slot 1, not 0: slot 0 carries the instance JSON that names which
+        // game to load, and the image itself arrives in slot 1.
+        if (dataslot_requestwrite && dataslot_requestwrite_id == 16'h1)
             po_armwrest <= (dataslot_requestwrite_size == IMG_SZ_ARMWREST);
     end
     wire        po_armwrest_s;
