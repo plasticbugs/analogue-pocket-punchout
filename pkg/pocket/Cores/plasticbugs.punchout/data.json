@@ -6,7 +6,7 @@
                 "name": "ROM Set",
                 "id": 0,
                 "required": true,
-                "parameters": "0x9",
+                "parameters": "0x109",
                 "extensions": [
                     "rom"
                 ],
@@ -16,8 +16,9 @@
                 "name": "Records",
                 "id": 1,
                 "required": false,
-                "parameters": "0x26",
+                "parameters": "0x22",
                 "nonvolatile": true,
+                "filename": "punchout.sav",
                 "extensions": [
                     "sav"
                 ],
