@@ -7,6 +7,11 @@
                 "id": 0,
                 "required": true,
                 "parameters": "0x109",
+                "filename": "punchout.rom",
+                "alternate_filenames": [
+                    "spnchout.rom",
+                    "armwrest.rom"
+                ],
                 "extensions": [
                     "rom"
                 ],
