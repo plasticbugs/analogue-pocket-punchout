@@ -156,7 +156,16 @@ module punchout_video (
     // lines from the PREVIOUS snapshot while the handler runs, and every
     // write it makes lands in the live RAM only. Once per frame is all the
     // game knows about NMI; its phase against the display is invisible to it.
-    localparam logic [9:0] NMI_ROW  = 10'd520;
+    //! 520 was not enough. Arm Wrestling's knockout blink rewrites the whole
+    //! big sprite -- 1152 bytes in one burst, about 5.5 ms of Z80 -- and 211
+    //! rows is 4.9 ms, so the snapshot landed in the middle of it and took the
+    //! new tiles for the lower half of the sprite with the old ones above:
+    //! a torn frame, once every eight, seen as the falling player flickering.
+    //! Firing just after the copier instead of just before it gives the handler
+    //! the whole frame, 711 rows, which is the most there is to give. Its
+    //! writes land in live RAM while the renderer works from the shadow, and
+    //! the next snapshot takes them whole.
+    localparam logic [9:0] NMI_ROW  = 10'd24;
     localparam logic [9:0] TOP_XOFF = 10'd128;        // (512 - 256) / 2, to centre it
 
     // Punch-Out!!'s sprite tilemaps are 16x32 tiles, 128 x 256 pixels. Arm

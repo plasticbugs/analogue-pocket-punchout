@@ -942,6 +942,47 @@ Three lessons, all game-agnostic:
   was checked, matched, and correctly cleared the whole memory path, which is
   what left the state machine as the only remaining suspect.
 
+### The falling player, and what a snapshot cannot make atomic
+
+Losing to an Arm Wrestling opponent made the player flicker as they fell. Held
+to MAME frame by frame through the fall, the core diverged on exactly two frames
+in every eight, from 5851 to 5934 -- a strict period, which is what a blink
+looks like when it is a frame out.
+
+The blink itself is a big sprite in rows 36-145 of the bottom monitor, toggling
+every eight frames. On the first differing frame the core produced an image
+MAME never draws at all: 1467 of the 3340 changed pixels updated, the rest not.
+Splitting that frame by row showed the shape exactly -- old sprite above row 87,
+new sprite below it. A torn frame.
+
+Tapping the game in MAME said why. On each blink it writes **1152 bytes** to the
+big-sprite RAM in one burst, about 5.5 ms of Z80 time. The NMI was being raised
+at raster row 520 to give the handler 211 rows -- 4.9 ms -- before the snapshot
+at row 17. That was enough for Punch-Out!!'s handler, which is what it had been
+tuned against, and half a millisecond short for this one. The copier walked
+while the burst was still running and took half of it.
+
+The write-through keeps each individual write coherent, and the bench confirms
+it: 769 writes during 184 walks, every one written through, no shadow ever
+disagreeing with live RAM. **None of that helps.** Write-through makes a write
+atomic; it cannot make a 1152-write update atomic. Only the position of the
+snapshot relative to the burst can.
+
+So the NMI moved from just *before* the copier to just *after* it, row 24. The
+handler now has the whole frame -- 711 rows, the most there is to give -- its
+writes land in live RAM while the renderer works from the shadow, and the next
+snapshot takes the update whole. The torn frame is gone, and Punch-Out!!, Super
+Punch-Out!! and Arm Wrestling are all still frame-exact against MAME through
+attract mode.
+
+What remains is a one-frame lead on the blink: the core shows the change one
+frame before MAME does. It is structural rather than tunable. The burst takes
+236 rows, so an NMI anywhere between the snapshot and row 495 lets it finish
+inside the frame and be picked up by the next snapshot -- one frame early --
+while anything later leaves it straddling the snapshot, which is the tear again.
+There is no third option in this design. A frame of blink phase is not visible;
+a torn sprite is.
+
 ### Where all three games stand at boot
 
 Re-measured on one bitstream after the fix, every reference re-captured from a
