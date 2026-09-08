@@ -98,6 +98,21 @@ Finally, set the platform's category so the Pocket files it correctly:
 slot 0 now arrives in slot 1, and the save moves from 1 to 2. Any core logic
 that names a slot by number has to move with it, and nothing will warn you:
 
+Grep for the old numbers; there are more of them than you remember. In one core
+there were **four**, and changing the obvious two left the ROM unloaded and the
+screen white:
+
+```
+target_dataslot_id  <= 16'd1;                          // core-initiated save
+nv_dl_index         == 16'h1                           // save being loaded in
+dataslot_requestwrite_id == 16'h0                      // game detection by size
+ioctl_index         == 16'h0                           // the ROM itself
+```
+
+The last one is the dangerous one: with the image moved to slot 1 and the gate
+still testing 0, not one ROM byte reaches memory, every game boots to a blank
+screen, and nothing in the build warns you.
+
 - Game detection that watches the announced size —
   `dataslot_requestwrite_id == 0` becomes `== 1`. Left alone it now measures
   the instance JSON, a few hundred bytes, and every game detects as whatever
