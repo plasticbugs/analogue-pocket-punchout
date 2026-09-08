@@ -6,7 +6,7 @@ monitor board, on one Pocket display:
 info screen at native size across the
 top third, the action below it at 2x.
 Neither loses a pixel. One core plays
-all three; it asks which on Run.
+all three; pick one when you Run.
 
 Hardware
 * Z80 4 MHz, main board

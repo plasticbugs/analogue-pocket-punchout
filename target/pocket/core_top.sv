@@ -630,7 +630,7 @@ module core_top
         target_dataslot_read     <= 1'b0;
         target_dataslot_getfile  <= 1'b0;
         target_dataslot_openfile <= 1'b0;
-        target_dataslot_id         <= 16'd1;
+        target_dataslot_id         <= 16'd2;   //! Records is slot 2; slot 1 is the ROM
         target_dataslot_slotoffset <= 32'd0;
         target_dataslot_bridgeaddr <= 32'h2000_0000;
         target_dataslot_length     <= 32'h400;
@@ -657,7 +657,7 @@ module core_top
     wire [7:0] nv_stat_s;
     synch_3 #(.WIDTH(8)) sync_nvstat(nv_stat, nv_stat_s, clk_sys);
     // the core's second NVRAM port: a load write wins, else the unloader's read
-    wire       po_nv_we   = nv_dl_download && nv_dl_index == 16'h1 && nv_dl_wr;
+    wire       po_nv_we   = nv_dl_download && nv_dl_index == 16'h2 && nv_dl_wr;
     wire [9:0] po_nv_addr = po_nv_we ? nv_dl_addr[9:0] : nv_rd_addr[9:0];
 
     always_comb begin
@@ -994,13 +994,13 @@ module core_top
     localparam [31:0] IMG_SZ_ARMWREST = 32'd420864;
     reg         po_armwrest = 1'b0;
     always_ff @(posedge clk_74a) begin
-        if (dataslot_requestwrite && dataslot_requestwrite_id == 16'h0)
+        if (dataslot_requestwrite && dataslot_requestwrite_id == 16'h1)
             po_armwrest <= (dataslot_requestwrite_size == IMG_SZ_ARMWREST);
     end
     wire        po_armwrest_s;
     synch_3 sync_awr(po_armwrest, po_armwrest_s, clk_sys);
 
-    wire        ioctl_isROM = ioctl_download && ioctl_index == 16'h0;
+    wire        ioctl_isROM = ioctl_download && ioctl_index == 16'h1;
     wire        dl_we       = ioctl_isROM && ioctl_wr;
     wire [24:0] dl_addr     = ioctl_addr[24:0];
     wire  [7:0] dl_data     = ioctl_data;
