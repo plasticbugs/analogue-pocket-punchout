@@ -9,9 +9,7 @@
                 "parameters": "0x113",
                 "extensions": [
                     "json"
-                ],
-                "address": "",
-                "nonvolatile": false
+                ]
             },
             {
                 "name": "ROM",
@@ -21,8 +19,7 @@
                 "extensions": [
                     "rom"
                 ],
-                "address": "0x00000000",
-                "nonvolatile": false
+                "address": "0x00000000"
             },
             {
                 "name": "Records",
