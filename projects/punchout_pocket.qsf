@@ -42,7 +42,12 @@ set_global_assignment -name SYNTH_PROTECT_SDC_CONSTRAINT ON
 set_global_assignment -name CRC_ERROR_OPEN_DRAIN ON
 set_global_assignment -name ECO_OPTIMIZE_TIMING ON
 set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 256
-set_global_assignment -name FITTER_EFFORT "AUTO FIT"
+# AUTO FIT stops once timing is nominally met, which leaves paths sitting on
+# zero margin: a -0.007 ns hold on the ROM-loader-to-character-RAM route
+# appeared from nothing but four changed constants. STANDARD FIT keeps
+# optimising, and hold repair is made explicit rather than left to the default.
+set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
+set_global_assignment -name OPTIMIZE_HOLD_TIMING "ALL PATHS"
 set_global_assignment -name PERIPHERY_TO_CORE_PLACEMENT_AND_ROUTING_OPTIMIZATION ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_ASYNCHRONOUS_SIGNAL_PIPELINING ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
