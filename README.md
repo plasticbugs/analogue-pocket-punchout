@@ -77,22 +77,40 @@ for both games and defaults to Start.
 | Reset Core | Restart the machine |
 | Reset Records | Wipe the battery RAM (high scores, play counters) |
 | Screen Shape | Arcade (square pixels) or Fill Screen |
-| ROM Set | Which game: `punchout.rom`, `spnchout.rom` or `armwrest.rom` |
-| SPO 4th Button | Start / L / R / Off — Super Punch-Out!!'s fourth button |
+| SPO Duck Button | A (KO on B) or B (KO on A) — Super Punch-Out!!'s duck |
 | Cabinet Reverb | Off / Light / Medium / Heavy — a short, dark room around the whole mix |
-| Scanlines | Off / 25 % / 50 % / 75 % — on the fight screen, drawn at 2×, they fall on one row of each pair |
-| Shadow Mask | Off / On / rotated / 2× |
-| Difficulty, Round Time, Demo Sounds, Rematch At A Discount, Free Play, Copyright Notice, Service Mode | The board's DIP switches. Labelled for Punch-Out!!; Arm Wrestling's switches mean different things (two halves of a coinage table, and a rematch count) |
+| Difficulty, Round Time, Rematch At A Discount, Free Play, Service Mode | The board's DIP switches. Labelled for Punch-Out!!; Arm Wrestling's switches mean different things (two halves of a coinage table, and a rematch count) |
+| Analogizer, Analogizer Video, SNAC Adapter, SNAC Assignment, Analogizer H / V Position | The Analogizer (below) |
+
+The Pocket shows at most 16 menu entries, so four went to make room for the
+Analogizer's six: **Scanlines** and **Shadow Mask** (now always off),
+**Copyright Notice** (always Nintendo, the factory setting) and **Demo
+Sounds** (always on, the factory setting).
 
 Records (high scores) are saved by the core itself a couple of seconds after
 they change, to `Saves/punchout/plasticbugs.punchout/punchout.sav`, and loaded
 at start. The Pocket's own **CRT Trinitron** display mode is available in its
 display settings for this core.
 
+## Analogizer
+
+The core supports RndMnkIII's [Analogizer](https://github.com/RndMnkIII/Analogizer)
+adapter, set up in the core's own menu, off by default. The cabinet had two
+monitors, and the Analogizer gets the **bottom one**: the fight screen alone,
+256×224 at a 15 kHz arcade monitor's own timing (RGBS, RGsB, YPbPr, Y/C, or
+scandoubled for a VGA monitor), while **"Analogizer: On, Pocket: top screen"**
+turns the Pocket into the top monitor, the info screen filling its display.
+SNAC pads play as the Pocket's controls, and two sliders centre the picture
+on the CRT. Because the core declares a cartridge adapter, the Pocket powers
+the slot: take any game cartridge out first. `docs/analogizer.md` has the
+modes, how the fight screen is retimed, and what has been checked — in
+simulation only so far; no Analogizer has been tried with this core.
+
 ## What is and is not implemented
 
-Synthesis closes on the real part: 41% of the logic, 51% of the block RAM,
-14 of 66 DSP blocks, and nothing negative in any timing corner at 96 MHz.
+Synthesis closes on the real part: 52% of the logic, 89% of the block RAM
+(the Analogizer's fight-screen ring is 48 of the 274 blocks), 16 of 66 DSP
+blocks, and nothing negative in any timing corner at 96 MHz.
 
 Working and verified:
 
@@ -210,6 +228,18 @@ that makes an openFPGA core buildable at all.
   **Morten Leikvoll** (BSD), via MiSTer's VIC20 core.
 * NES APU by **Kitrinx** (GPLv3), via
   [NES_MiSTer](https://github.com/MiSTer-devel/NES_MiSTer).
+
+### The Analogizer
+
+* **RndMnkIII** — the [Analogizer](https://github.com/RndMnkIII/Analogizer)
+  adapter and its `openFPGA_Pocket_Analogizer` module
+  (`target/pocket/analogizer/`, vendored verbatim from his MiraxPocket core
+  via the pocket-core-template), with the parts it gathers from others: the
+  Y/C encoder by **Mike Simone**, the scandoubler and HQ2x by **Sorgelig**
+  and **Ludvig Strigeus** (MiSTer), the PlayStation controller interface
+  after **pgate1**'s psPAD, and the SNAC game-controller readers he credits
+  to **@MikeSimonson**, the **MiST** project, **@RandyS**, **jotego**,
+  **Scott Larson** (the PS/2 receiver) and **@tomasz**.
 
 ### Platform layer
 

@@ -13,7 +13,8 @@
 # core_pll general[0] = clk_sys       96.0 MHz  machine, renderer, SDRAM
 #          general[1] = clk_vid       24.0 MHz  dot clock, exactly clk_sys / 4
 #          general[2] = clk_vid 90deg 24.0 MHz
-#          general[3], general[4]     unused
+#          general[3] = clk_sdram     96.0 MHz  SDRAM chip clock, phase-shifted (below)
+#          general[4] = clk_ana       48.0 MHz  the Analogizer, clk_sys / 2 in phase
 #
 # clk_sys and the two pixel clocks stay in ONE group on purpose. The renderer
 # emits a pixel every fourth clk_sys cycle and the APF scaler samples it on

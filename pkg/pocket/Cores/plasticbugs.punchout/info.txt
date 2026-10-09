@@ -32,3 +32,10 @@ included mra_build.py. Records save
 per game. The DIP menu is
 labelled for Punch-Out!!; Arm
 Wrestling's switches differ.
+
+Analogizer: the fight screen alone to
+a CRT at 15 kHz; "On, Pocket: top
+screen" makes the Pocket the upper
+monitor. Set in this core's menu. The
+slot is powered: remove any cartridge
+first.
