@@ -103,8 +103,8 @@ turns the Pocket into the top monitor, the info screen filling its display.
 SNAC pads play as the Pocket's controls, and two sliders centre the picture
 on the CRT. Because the core declares a cartridge adapter, the Pocket powers
 the slot: take any game cartridge out first. `docs/analogizer.md` has the
-modes, how the fight screen is retimed, and what has been checked — in
-simulation only so far; no Analogizer has been tried with this core.
+modes, how the fight screen is retimed, and what has been checked.
+Confirmed on a Pocket with an Analogizer and a CRT (0.5.0).
 
 ## What is and is not implemented
 
