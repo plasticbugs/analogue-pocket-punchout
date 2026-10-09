@@ -1,7 +1,8 @@
 #!/bin/sh
 # Super Punch-Out!! protection RTL against MAME, access for access.
 # Capture the trace first with scratchpad/prot.lua (see docs/verification.md):
-#   mame spnchout -rompath roms -video none -sound none -nothrottle \
+#   SDL_VIDEODRIVER=dummy mame spnchout -rompath roms -video none -videodriver dummy \
+#        -window -nomaximize -sound none -nothrottle -skip_gameinfo -seconds_to_run 600 \
 #        -autoboot_script prot.lua
 set -e
 cd "$(dirname "$0")/.."

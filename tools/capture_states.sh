@@ -9,6 +9,11 @@
 # works just as well.
 set -e
 cd "$(dirname "$0")/.."
+# MAME runs headless and must never touch the display: -video none still lets
+# it create a window, and its defaults are fullscreen, which on macOS sends
+# the desktop to a new Space on every run.  SDL_VIDEODRIVER=dummy stops SDL
+# opening the display at all, -videodriver dummy says the same through MAME,
+# and -window -nomaximize keep any window that appears regardless small.
 OUT=${OUT:-artifacts}
 ROMSET=${ROMSET:-mame-romset}
 # GAME picks the MAME set: punchout, or spnchout for Super Punch-Out!!
@@ -55,7 +60,8 @@ for f in $FRAMES; do
     rm -rf "$COLD"; mkdir -p "$COLD"
     tag=$(printf "%04d" "$f")
     PO_OUT="$OUT" PO_FRAME="$f" PO_TAG="$tag" \
-    mame "$GAME" -rompath "$ROMPATH" -video none -sound none -nothrottle \
+    SDL_VIDEODRIVER=dummy mame "$GAME" -rompath "$ROMPATH" \
+        -video none -videodriver dummy -window -nomaximize -sound none -nothrottle \
         -skip_gameinfo -seconds_to_run 3600 \
         -snapshot_directory "$OUT/snap_$tag" -cfg_directory "$COLD" \
         -nvram_directory "$COLD" -autoboot_script tools/dumpstate.lua \
@@ -72,7 +78,8 @@ for spec in $SYNTH; do
     f=${spec%%:*}; bank=${spec##*:}
     tag=$(printf "%04dp%s" "$f" "$bank")
     PO_OUT="$OUT" PO_FRAME="$f" PO_TAG="$tag" PO_PALBANK="$bank" \
-    mame "$GAME" -rompath "$ROMPATH" -video none -sound none -nothrottle \
+    SDL_VIDEODRIVER=dummy mame "$GAME" -rompath "$ROMPATH" \
+        -video none -videodriver dummy -window -nomaximize -sound none -nothrottle \
         -skip_gameinfo -seconds_to_run 3600 \
         -snapshot_directory "$OUT/snap_$tag" -cfg_directory "$COLD" \
         -nvram_directory "$COLD" -autoboot_script tools/dumpstate.lua \

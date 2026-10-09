@@ -30,7 +30,8 @@ for f in $FRAMES; do
     rm -rf "$COLD"; mkdir -p "$COLD"
     tag=$(printf "%04d" "$f")
     PO_OUT="$OUT" PO_FRAME="$f" PO_TAG="$tag" PO_NOINPUT=1 \
-    mame "$GAME" -rompath "$ROMPATH" -video none -sound none -nothrottle \
+    SDL_VIDEODRIVER=dummy mame "$GAME" -rompath "$ROMPATH" \
+        -video none -videodriver dummy -window -nomaximize -sound none -nothrottle \
         -skip_gameinfo -seconds_to_run 3600 -snapshot_directory "$OUT/snap" \
         -cfg_directory "$COLD" -nvram_directory "$COLD" \
         -autoboot_script tools/dumpstate.lua 2>&1 | grep -E '^\[po\]' | tail -1
