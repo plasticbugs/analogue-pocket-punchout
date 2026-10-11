@@ -81,11 +81,14 @@ verilator --lint-only $FLAGS --top-module po_topscreen target/pocket/po_topscree
 # them, so their warnings are dropped by path -- their errors are not, but for
 # one: hq2x.sv (MiSTer's) assigns its output wire in an always block, which
 # Quartus takes and Verilator calls an error (PROCASSWIRE).
+# yc_out_legacy.sv goes through sim/yc_out_legacy_stub.v (its sine table, a
+# wire array with an initial value, is past CI's Verilator 5.020), and
+# BLKANDNBLK in the vendored SNAC module is waived (5.020 cannot lint it).
 echo "--- analogizer ---"
 A=target/pocket/analogizer
-out=$(verilator --lint-only $FLAGS -Wno-PROCASSWIRE -Wno-TIMESCALEMOD --top-module pocket_analogizer \
+out=$(verilator --lint-only $FLAGS -Wno-PROCASSWIRE -Wno-BLKANDNBLK -Wno-TIMESCALEMOD --top-module pocket_analogizer \
       target/pocket/pocket_analogizer.sv platform/pocket/helpers/synch_3.sv \
-      $A/*.v $A/*.sv sim/ps2_keyboard_stub.v 2>&1 \
+      $A/*.v $(ls $A/*.sv | grep -v /yc_out_legacy.sv) sim/yc_out_legacy_stub.v sim/ps2_keyboard_stub.v 2>&1 \
       | grep -E '^%(Error|Warning)' | grep -v 'Exiting due to' \
       | grep -v -E '^%Warning[^ ]*: [^ ]*(target/pocket/analogizer|platform/pocket)/' || true)
 if [ -n "$out" ]; then echo "$out"; exit 1; fi
